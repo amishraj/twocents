@@ -183,6 +183,11 @@ button {
   font-weight: 700;
 }
 
+.leave-btn {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 @media (min-width: 960px) {
   .member-grid {
     grid-template-columns: repeat(2, 1fr);

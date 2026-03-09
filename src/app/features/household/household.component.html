@@ -18,6 +18,19 @@
     <p class="meta">Based on all household members</p>
   </section>
 
+  @if (canLeaveHousehold()) {
+    <section class="card">
+      <div class="section-head">
+        <h3>Leave household</h3>
+        <span>Move back to your own personal household instantly</span>
+      </div>
+      <button type="button" class="leave-btn" (click)="leaveHousehold()">Leave household now</button>
+      @if (joinMessage) {
+        <p class="meta">{{ joinMessage }}</p>
+      }
+    </section>
+  }
+
   @if (showJoinCard()) {
     <section class="card">
       <div class="section-head">

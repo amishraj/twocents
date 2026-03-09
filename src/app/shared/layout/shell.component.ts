@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { AppStateService } from '../../core/services/app-state.service';
+import { HouseholdMembershipService } from '../../core/services/household-membership.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { QuickAddExpenseComponent } from '../quick-add/quick-add-expense.component';
@@ -18,6 +19,7 @@ export class ShellComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly appState = inject(AppStateService);
+  private readonly membership = inject(HouseholdMembershipService);
   private readonly inviteFlow = inject(InviteFlowService);
 
   readonly sidenavOpen = signal(false);
@@ -39,6 +41,7 @@ export class ShellComponent {
   });
 
   inviteActionMessage = '';
+  private inviteToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   navItems = [
     { label: 'Home', route: '/dashboard', icon: 'home' },
@@ -110,14 +113,15 @@ export class ShellComponent {
       return;
     }
 
-    this.inviteActionMessage = '';
+    const message = this.membership.requestJoinByCode(invite.code);
+    this.showInviteToast(message);
+
+    if (message.startsWith('Joined ') || message === 'You are already in this household.') {
+      this.inviteFlow.clearPendingInviteCode();
+      void this.router.navigate(['/dashboard']);
+    }
+
     this.closeColorPicker();
-    void this.router.navigate(['/profile'], {
-      queryParams: {
-        inviteCode: invite.code,
-        acceptInvite: '1'
-      }
-    });
   }
 
   declineInvite(): void {
@@ -127,7 +131,7 @@ export class ShellComponent {
     }
 
     this.inviteFlow.clearPendingInviteCode();
-    this.inviteActionMessage = 'Invite declined.';
+    this.showInviteToast('Invite declined.');
   }
 
   setThemeColor(color: string): void {
@@ -181,5 +185,16 @@ export class ShellComponent {
     document.documentElement.style.setProperty('--info', color);
     document.documentElement.style.setProperty('--info-soft', accentSoft);
     document.documentElement.style.setProperty('--shadow-strong', `0 18px 38px -18px ${this.toRgba(color, 0.55)}`);
+  }
+
+  private showInviteToast(message: string): void {
+    this.inviteActionMessage = message;
+    if (this.inviteToastTimer) {
+      clearTimeout(this.inviteToastTimer);
+    }
+
+    this.inviteToastTimer = setTimeout(() => {
+      this.inviteActionMessage = '';
+    }, 3000);
   }
 }

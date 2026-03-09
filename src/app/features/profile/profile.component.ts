@@ -42,6 +42,11 @@ export class ProfileComponent {
     return household.members.length <= 1;
   });
 
+  canLeaveHousehold = computed(() => {
+    const household = this.household();
+    return Boolean(household && household.members.length > 1);
+  });
+
   invitesForHousehold = computed(() => {
     const household = this.household();
     if (!household) {
@@ -226,6 +231,10 @@ export class ProfileComponent {
     }
 
     this.codeJoinForm.reset({ code: '' });
+  }
+
+  leaveHousehold(): void {
+    this.householdMessage = this.membership.leaveCurrentHousehold();
   }
 
   approveRequest(requestId: string): void {

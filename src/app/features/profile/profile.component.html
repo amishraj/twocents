@@ -66,6 +66,10 @@
         </form>
       }
 
+      @if (canLeaveHousehold()) {
+        <button class="danger-btn" type="button" (click)="leaveHousehold()">Leave household</button>
+      }
+
       @if (householdMessage) {
         <p class="notice">{{ householdMessage }}</p>
       }

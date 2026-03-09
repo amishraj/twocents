@@ -55,7 +55,7 @@
 
   <nav class="desktop-nav">
     @for (item of navItems; track item.route) {
-      <a class="nav-link" [routerLink]="item.route" routerLinkActive="active">{{ item.label }}</a>
+      <button class="nav-link" type="button" [routerLink]="item.route" routerLinkActive="active">{{ item.label }}</button>
     }
   </nav>
 
@@ -74,14 +74,15 @@
     </div>
     <nav class="sidenav-links">
       @for (item of navItems; track item.route) {
-        <a
+        <button
           class="sidenav-link"
+          type="button"
           [routerLink]="item.route"
           routerLinkActive="active"
           (click)="closeSidenav()"
         >
           {{ item.label }}
-        </a>
+        </button>
       }
     </nav>
   </aside>

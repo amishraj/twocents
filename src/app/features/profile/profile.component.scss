@@ -179,6 +179,16 @@ input {
   cursor: pointer;
 }
 
+.danger-btn {
+  border: none;
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 0.65rem 0.9rem;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @media (min-width: 920px) {
   .grid {
     grid-template-columns: 1fr 1fr;

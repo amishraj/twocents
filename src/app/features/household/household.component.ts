@@ -39,6 +39,11 @@ export class HouseholdComponent {
     return !this.household();
   });
 
+  canLeaveHousehold = computed(() => {
+    const household = this.household();
+    return Boolean(household && household.members.length > 1);
+  });
+
   members = computed(() => {
     const household = this.household();
     if (!household) {
@@ -158,5 +163,9 @@ export class HouseholdComponent {
     }
 
     this.joinForm.reset({ code: '' });
+  }
+
+  leaveHousehold(): void {
+    this.joinMessage = this.membership.leaveCurrentHousehold();
   }
 }

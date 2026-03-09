@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { AuthService } from './auth.service';
 import { AppStateService } from './app-state.service';
-import { createId } from '../utils/id';
+import { createId, createInviteCode } from '../utils/id';
 
 @Injectable({ providedIn: 'root' })
 export class HouseholdMembershipService {
@@ -30,36 +30,64 @@ export class HouseholdMembershipService {
       return 'You are already in this household.';
     }
 
-    const pendingOrApproved = this.appState
-      .householdChangeRequests()
-      .find(
-        (request) =>
-          request.userId === activeUser.id &&
-          request.fromHouseholdId === currentHousehold.id &&
-          request.targetHouseholdId === targetHousehold.id &&
-          (request.status === 'pending' || request.status === 'approved')
-      );
-
-    const otherMembersExist = currentHousehold.members.some((member) => member.userId !== activeUser.id);
-
-    if (pendingOrApproved?.status === 'pending') {
-      return 'Leave request is pending. Another household member must approve it first.';
-    }
-
-    if (!pendingOrApproved && otherMembersExist) {
-      this.appState.addHouseholdChangeRequest({
-        id: createId(),
-        userId: activeUser.id,
-        fromHouseholdId: currentHousehold.id,
-        targetHouseholdId: targetHousehold.id,
-        status: 'pending',
-        requestedAt: new Date().toISOString()
-      });
-      return 'Leave request created. Ask another member to approve, then join again.';
-    }
-
     this.joinHousehold(activeUser.id, currentHousehold.id, targetHousehold.id, activeUser.name);
     return `Joined ${targetHousehold.name}.`;
+  }
+
+  leaveCurrentHousehold(): string {
+    const activeUser = this.auth.getActiveUser();
+    if (!activeUser) {
+      return 'Sign in first to leave a household.';
+    }
+
+    const currentHousehold = this.appState.householdById(activeUser.householdId);
+    if (!currentHousehold) {
+      return 'Current household could not be found.';
+    }
+
+    if (currentHousehold.members.length <= 1) {
+      return 'You are already in your own household.';
+    }
+
+    const now = new Date().toISOString();
+    const newHouseholdId = createId();
+    const newHousehold = {
+      id: newHouseholdId,
+      name: `${activeUser.name} Household`,
+      type: 'solo' as const,
+      members: [
+        {
+          userId: activeUser.id,
+          role: 'owner' as const,
+          displayName: activeUser.name,
+          joinedAt: now
+        }
+      ],
+      sharedBudgetEnabled: true,
+      inviteCode: createInviteCode(),
+      currency: activeUser.preferences.currency || 'USD'
+    };
+
+    const households = this.appState.households()
+      .map((household) => {
+        if (household.id !== currentHousehold.id) {
+          return household;
+        }
+
+        return {
+          ...household,
+          members: household.members.filter((member) => member.userId !== activeUser.id)
+        };
+      })
+      .filter((household) => household.members.length > 0);
+
+    this.auth.updateUser({
+      ...activeUser,
+      householdId: newHouseholdId
+    });
+
+    this.appState.updateHouseholds([newHousehold, ...households]);
+    return 'You left the household and moved to your own household.';
   }
 
   private joinHousehold(userId: string, fromHouseholdId: string, targetHouseholdId: string, name: string): void {
