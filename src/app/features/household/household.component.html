@@ -1,0 +1,116 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Household</h1>
+      <p>{{ household()?.name || 'Household overview' }}</p>
+    </div>
+    <div class="links">
+      <a routerLink="/budgets">Manage budgets</a>
+      <a routerLink="/savings">Manage savings</a>
+    </div>
+  </div>
+
+  <section class="card hero">
+    <div>
+      <p class="eyebrow">Monthly household income</p>
+      <h2>${{ monthlyHouseholdIncome() | number: '1.0-0' }}</h2>
+    </div>
+    <p class="meta">Based on all household members</p>
+  </section>
+
+  @if (showJoinCard()) {
+    <section class="card">
+      <div class="section-head">
+        <h3>Join household</h3>
+        <span>Use an invite code from a teammate</span>
+      </div>
+      <form class="join-form" [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
+        <input type="text" formControlName="code" placeholder="ABC123" />
+        <button type="submit">Join household</button>
+      </form>
+      @if (joinMessage) {
+        <p class="meta">{{ joinMessage }}</p>
+      }
+    </section>
+  }
+
+  <section class="card">
+    <div class="section-head">
+      <h3>Member contribution</h3>
+      <span>Income + shared spend this month</span>
+    </div>
+    <div class="member-grid">
+      @for (member of memberContribution(); track member.userId) {
+        <div class="member-card">
+          <div class="row">
+            <strong>{{ member.displayName }}</strong>
+            <span class="chip">{{ member.role }}</span>
+          </div>
+          <div class="line">Income: ${{ member.incomeMonthly | number: '1.0-0' }} ({{ member.incomePct }}%)</div>
+          <div class="line">
+            Shared spend paid: ${{ member.sharedSpend | number: '1.0-0' }} ({{ member.spendPct }}%)
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h3>Shared budgets</h3>
+      <span>{{ household()?.name || 'Household' }}</span>
+    </div>
+    <div class="budget-list">
+      @for (item of sharedBudgetSummaries(); track item.budget.id) {
+        <div class="budget-item">
+          <div class="row">
+            <div class="title">
+              <span class="dot" [style.background]="item.category?.color"></span>
+              <strong>{{ item.category?.name || 'Category' }}</strong>
+              <span class="period">{{ item.budget.period }}</span>
+            </div>
+            <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
+          </div>
+          <div class="track">
+            <div class="fill" [style.width.%]="item.percent" [style.background]="item.category?.color"></div>
+          </div>
+          <p class="meta">Remaining: ${{ item.remaining | number: '1.0-0' }}</p>
+        </div>
+      }
+      @if (sharedBudgetSummaries().length === 0) {
+        <p class="meta">No shared budgets yet.</p>
+      }
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h3>Shared savings goals</h3>
+      <span>Update progress by contribution</span>
+    </div>
+    <div class="savings-list">
+      @for (goal of sharedSavingsGoals(); track goal.id) {
+        <div class="savings-item">
+          <div class="row">
+            <strong>{{ goal.name }}</strong>
+            <div class="amount">${{ goal.currentAmount | number: '1.0-0' }} / {{ goal.targetAmount | number: '1.0-0' }}</div>
+          </div>
+          <p class="meta">{{ goal.accountName }}</p>
+          <div class="contribution-row">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              [value]="contributionInput()[goal.id] || 0"
+              (input)="setContribution(goal.id, $any($event.target).value)"
+            />
+            <button type="button" (click)="addContribution(goal.id)">Add amount</button>
+          </div>
+        </div>
+      }
+      @if (sharedSavingsGoals().length === 0) {
+        <p class="meta">No shared savings goals yet.</p>
+      }
+    </div>
+  </section>
+</div>

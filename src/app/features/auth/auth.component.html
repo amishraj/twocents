@@ -1,0 +1,57 @@
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="header">
+      <div class="logo">B</div>
+      <h1>{{ mode === 'signin' ? 'Welcome back' : 'Create your account' }}</h1>
+      <p>
+        {{
+          mode === 'signin'
+            ? 'Track your household spending in seconds.'
+            : 'Set up shared budgets and keep things clear.'
+        }}
+      </p>
+      @if (inviteCode) {
+        <p class="invite-banner">
+          You were invited to a household. Sign in or create an account first, then you can accept or decline the invite.
+        </p>
+      }
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      @if (mode === 'signup') {
+        <div class="field">
+          <label>Name</label>
+          <input type="text" formControlName="name" placeholder="Avery" />
+        </div>
+      }
+      <div class="field">
+        <label>Email</label>
+        <input type="email" formControlName="email" placeholder="you@email.com" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" formControlName="password" placeholder="password" />
+      </div>
+
+      @if (error) {
+        <p class="error">{{ error }}</p>
+      }
+
+      <button class="primary" type="submit" [disabled]="loading">
+        {{ mode === 'signin' ? 'Sign in' : 'Create account' }}
+      </button>
+      <button class="ghost" type="button" (click)="signInWithGoogle()" [disabled]="loading">
+        Continue with Google
+      </button>
+    </form>
+
+    <div class="footer">
+      <span>
+        {{ mode === 'signin' ? 'New here?' : 'Already have an account?' }}
+      </span>
+      <button type="button" class="link" (click)="toggleMode()">
+        {{ mode === 'signin' ? 'Create an account' : 'Sign in' }}
+      </button>
+    </div>
+  </div>
+</div>

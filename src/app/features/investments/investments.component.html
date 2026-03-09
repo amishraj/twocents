@@ -1,0 +1,55 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Investments</h1>
+      <p>Where your long-term money is allocated.</p>
+    </div>
+    <button class="primary" type="button" (click)="toggleForm()">Add investment</button>
+  </div>
+
+  @if (showForm) {
+    <form class="card form" [formGroup]="form" (ngSubmit)="addEntry()">
+      <div class="field">
+        <label>Investment</label>
+        <input type="text" formControlName="label" placeholder="Vanguard S&P 500" />
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label>Amount</label>
+          <input type="number" formControlName="amount" min="0" />
+        </div>
+        <div class="field">
+          <label>Account</label>
+          <input type="text" formControlName="accountName" placeholder="Brokerage" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select formControlName="type">
+          <option value="brokerage">Brokerage</option>
+          <option value="retirement">Retirement</option>
+          <option value="crypto">Crypto</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <button class="primary" type="submit">Save investment</button>
+    </form>
+  }
+
+  <div class="grid cards">
+    @for (entry of appState.investments(); track entry.id) {
+      <div class="card investment-card" [ngClass]="typeTone(entry.type)">
+        <div class="row">
+          <div>
+            <h3>{{ entry.label }}</h3>
+            <p>{{ entry.accountName }}</p>
+          </div>
+          <div class="amount">${{ entry.amount | number: '1.0-0' }}</div>
+        </div>
+        <div class="chip-row">
+          <span class="type-chip" [ngClass]="typeTone(entry.type)">{{ entry.type }}</span>
+        </div>
+      </div>
+    }
+  </div>
+</div>

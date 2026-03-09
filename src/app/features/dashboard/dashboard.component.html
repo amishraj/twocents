@@ -1,0 +1,107 @@
+<div class="dashboard">
+  <div class="hero">
+    <div>
+      <p class="eyebrow">Welcome {{ activeUser()?.name || 'back' }}</p>
+      <h1>Here is your spending snapshot</h1>
+      <p class="subtext">{{ household()?.name || 'Your household' }} - {{ ui.dashboardRange() }} view</p>
+    </div>
+    <div class="range-toggle">
+      <button
+        type="button"
+        [class.active]="ui.dashboardRange() === 'week'"
+        (click)="setRange('week')"
+      >
+        Week
+      </button>
+      <button
+        type="button"
+        [class.active]="ui.dashboardRange() === 'month'"
+        (click)="setRange('month')"
+      >
+        Month
+      </button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="card spend-card">
+      <div class="card-header">
+        <h3>Household category spend</h3>
+        <span class="muted">{{ household()?.name || 'Household' }}</span>
+      </div>
+      <div class="chart">
+        @for (item of categorySpend(); track item.category?.id) {
+          <div class="chart-row">
+            <div class="label">
+              <span class="dot" [style.background]="item.category?.color"></span>
+              {{ item.category?.name }}
+            </div>
+            <div class="bar">
+              <div
+                class="fill"
+                [style.background]="item.category?.color"
+                [style.width.%]="(item.amount / maxSpend()) * 100"
+              ></div>
+            </div>
+            <div class="amount">${{ item.amount | number: '1.0-0' }}</div>
+          </div>
+        }
+        @if (categorySpend().length === 0) {
+          <p class="empty">No spend yet. Add your first expense.</p>
+        }
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <h3>Budget health</h3>
+        <a routerLink="/budgets">Manage</a>
+      </div>
+      <div class="budget-grid">
+        @for (item of budgetProgress(); track item.budget.id) {
+          <div class="budget-item">
+            <div class="budget-label">
+              <span class="dot" [style.background]="item.color"></span>
+              {{ item.categoryName }}
+            </div>
+            <div class="progress">
+              <div class="track">
+                <div class="fill" [style.width.%]="item.percent" [style.background]="item.color"></div>
+              </div>
+              <span>{{ item.spent | number: '1.0-0' }} / {{ item.budget.limit }}</span>
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+  </div>
+
+  <section class="card transactions">
+    <div class="card-header">
+      <h3>Recent transactions</h3>
+      <a routerLink="/transactions">View all</a>
+    </div>
+    <div class="transaction-list">
+      @for (transaction of recentTransactions(); track transaction.id) {
+        <div class="transaction-row">
+          <div>
+            <div class="title">{{ transaction.title }}</div>
+            <div class="meta">
+              {{ appState.categoryById(transaction.categoryId)?.name || 'Category' }} -
+              {{ transaction.scope }}
+            </div>
+          </div>
+          <div class="row-actions">
+            <div class="amount">${{ transaction.amount | number: '1.2-2' }}</div>
+            <a class="edit-link" [routerLink]="'/transactions'" [queryParams]="{ edit: transaction.id }" aria-label="Edit transaction">
+              <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </a>
+          </div>
+        </div>
+      }
+      @if (recentTransactions().length === 0) {
+        <p class="empty">No transactions yet.</p>
+      }
+    </div>
+  </section>
+</div>

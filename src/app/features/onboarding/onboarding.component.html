@@ -1,0 +1,48 @@
+<div class="onboarding">
+  <div class="card">
+    <h1>Set up your household</h1>
+    <p>Tell us a little about how you want to track money together.</p>
+
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <div class="field">
+        <label>Household name</label>
+        <input type="text" formControlName="householdName" placeholder="Avery + Jordan" />
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label>Type</label>
+          <select formControlName="householdType">
+            <option value="couple">Couple</option>
+            <option value="solo">Solo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Currency</label>
+          <select formControlName="currency">
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="INR">INR</option>
+            <option value="GBP">GBP</option>
+            <option value="CAD">CAD</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label>Monthly income</label>
+          <input type="number" formControlName="incomeMonthly" min="0" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Priority</label>
+        <select formControlName="focus">
+          <option value="clarity">Clarity on spending</option>
+          <option value="savings">Grow savings</option>
+          <option value="plan">Plan shared budgets</option>
+        </select>
+      </div>
+
+      <button class="primary" type="submit">Finish setup</button>
+    </form>
+  </div>
+</div>

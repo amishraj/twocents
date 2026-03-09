@@ -1,0 +1,446 @@
+import { Injectable, computed, inject, signal } from '@angular/core';
+import {
+  Budget,
+  BudgetCategory,
+  Household,
+  HouseholdChangeRequest,
+  Invite,
+  InvestmentEntry,
+  RecurringTemplate,
+  SavingsGoal,
+  Transaction,
+  User
+} from '../models/app.models';
+import { FirebaseClientService } from './firebase-client.service';
+import { StorageService } from './storage.service';
+import {
+  CollectionReference,
+  DocumentData,
+  Unsubscribe,
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc
+} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { createId } from '../utils/id';
+
+const STORAGE_KEYS = {
+  users: 'bt_users',
+  households: 'bt_households',
+  categories: 'bt_categories',
+  budgets: 'bt_budgets',
+  transactions: 'bt_transactions',
+  savings: 'bt_savings',
+  investments: 'bt_investments',
+  invites: 'bt_invites',
+  householdChangeRequests: 'bt_household_change_requests',
+  recurringTemplates: 'bt_recurring_templates'
+};
+
+@Injectable({ providedIn: 'root' })
+export class AppStateService {
+  private readonly storage = inject(StorageService);
+  private readonly firebase = inject(FirebaseClientService);
+
+  private readonly usersSignal = signal<User[]>(this.storage.getItem(STORAGE_KEYS.users, []));
+  private readonly householdsSignal = signal<Household[]>(this.storage.getItem(STORAGE_KEYS.households, []));
+  private readonly categoriesSignal = signal<BudgetCategory[]>(this.storage.getItem(STORAGE_KEYS.categories, []));
+  private readonly budgetsSignal = signal<Budget[]>(this.storage.getItem(STORAGE_KEYS.budgets, []));
+  private readonly transactionsSignal = signal<Transaction[]>(this.storage.getItem(STORAGE_KEYS.transactions, []));
+  private readonly savingsSignal = signal<SavingsGoal[]>(this.storage.getItem(STORAGE_KEYS.savings, []));
+  private readonly investmentsSignal = signal<InvestmentEntry[]>(
+    this.storage.getItem(STORAGE_KEYS.investments, [])
+  );
+  private readonly invitesSignal = signal<Invite[]>(this.storage.getItem(STORAGE_KEYS.invites, []));
+  private readonly householdChangeRequestsSignal = signal<HouseholdChangeRequest[]>(
+    this.storage.getItem(STORAGE_KEYS.householdChangeRequests, [])
+  );
+  private readonly recurringTemplatesSignal = signal<RecurringTemplate[]>(
+    this.storage.getItem(STORAGE_KEYS.recurringTemplates, [])
+  );
+
+  private readonly authUidSignal = signal<string | null>(null);
+  private readonly unsubscribers: Unsubscribe[] = [];
+  private recurringGenerationInFlight = false;
+
+  readonly users = computed(() => this.usersSignal());
+  readonly households = computed(() => this.householdsSignal());
+  readonly categories = computed(() => this.categoriesSignal());
+  readonly budgets = computed(() => this.budgetsSignal());
+  readonly transactions = computed(() => this.transactionsSignal());
+  readonly savingsGoals = computed(() => this.savingsSignal());
+  readonly investments = computed(() => this.investmentsSignal());
+  readonly invites = computed(() => this.invitesSignal());
+  readonly householdChangeRequests = computed(() => this.householdChangeRequestsSignal());
+  readonly recurringTemplates = computed(() => this.recurringTemplatesSignal());
+
+  constructor() {
+    onAuthStateChanged(this.firebase.auth, (authUser) => {
+      this.cleanupWatchers();
+      if (!authUser) {
+        this.authUidSignal.set(null);
+        return;
+      }
+
+      this.authUidSignal.set(authUser.uid);
+      this.watchUser(authUser.uid);
+    });
+  }
+
+  updateUsers(users: User[]): void {
+    this.usersSignal.set(users);
+    this.storage.setItem(STORAGE_KEYS.users, users);
+    const currentUid = this.authUidSignal();
+    if (!currentUid) {
+      return;
+    }
+
+    const user = users.find((item) => item.id === currentUid);
+    if (user) {
+      void this.upsertUser(user);
+    }
+  }
+
+  updateHouseholds(households: Household[]): void {
+    this.householdsSignal.set(households);
+    this.storage.setItem(STORAGE_KEYS.households, households);
+    const activeHouseholdId = this.activeHouseholdId();
+    if (!activeHouseholdId) {
+      return;
+    }
+
+    const household = households.find((item) => item.id === activeHouseholdId);
+    if (household) {
+      void this.upsertHousehold(household);
+    }
+  }
+
+  addCategory(category: BudgetCategory): void {
+    const next = [category, ...this.categoriesSignal()];
+    this.categoriesSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.categories, next);
+    void this.upsertHouseholdDoc('categories', category.id, category);
+  }
+
+  updateCategories(categories: BudgetCategory[]): void {
+    this.categoriesSignal.set(categories);
+    this.storage.setItem(STORAGE_KEYS.categories, categories);
+    for (const category of categories) {
+      void this.upsertHouseholdDoc('categories', category.id, category);
+    }
+  }
+
+  addBudget(budget: Budget): void {
+    const next = [budget, ...this.budgetsSignal()];
+    this.budgetsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.budgets, next);
+    void this.upsertHouseholdDoc('budgets', budget.id, budget);
+  }
+
+  addTransaction(transaction: Transaction): void {
+    const next = [transaction, ...this.transactionsSignal()];
+    this.transactionsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.transactions, next);
+    void this.upsertHouseholdDoc('transactions', transaction.id, transaction);
+  }
+
+  removeTransaction(transactionId: string): void {
+    const next = this.transactionsSignal().filter((transaction) => transaction.id !== transactionId);
+    this.transactionsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.transactions, next);
+    void this.upsertHouseholdDoc('transactions', transactionId, { deleted: true, deletedAt: new Date().toISOString() });
+  }
+
+  addSavingsGoal(goal: SavingsGoal): void {
+    const next = [goal, ...this.savingsSignal()];
+    this.savingsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.savings, next);
+    void this.upsertHouseholdDoc('savings', goal.id, goal);
+  }
+
+  addInvestment(entry: InvestmentEntry): void {
+    const next = [entry, ...this.investmentsSignal()];
+    this.investmentsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.investments, next);
+    void this.upsertHouseholdDoc('investments', entry.id, entry);
+  }
+
+  updateBudgets(budgets: Budget[]): void {
+    this.budgetsSignal.set(budgets);
+    this.storage.setItem(STORAGE_KEYS.budgets, budgets);
+    for (const budget of budgets) {
+      void this.upsertHouseholdDoc('budgets', budget.id, budget);
+    }
+  }
+
+  updateTransactions(transactions: Transaction[]): void {
+    this.transactionsSignal.set(transactions);
+    this.storage.setItem(STORAGE_KEYS.transactions, transactions);
+    for (const transaction of transactions) {
+      void this.upsertHouseholdDoc('transactions', transaction.id, transaction);
+    }
+  }
+
+  updateSavings(goals: SavingsGoal[]): void {
+    this.savingsSignal.set(goals);
+    this.storage.setItem(STORAGE_KEYS.savings, goals);
+    for (const goal of goals) {
+      void this.upsertHouseholdDoc('savings', goal.id, goal);
+    }
+  }
+
+  updateInvestments(entries: InvestmentEntry[]): void {
+    this.investmentsSignal.set(entries);
+    this.storage.setItem(STORAGE_KEYS.investments, entries);
+    for (const entry of entries) {
+      void this.upsertHouseholdDoc('investments', entry.id, entry);
+    }
+  }
+
+  addInvite(invite: Invite): void {
+    const next = [invite, ...this.invitesSignal()];
+    this.invitesSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.invites, next);
+    void this.upsertHouseholdDoc('invites', invite.id, invite);
+  }
+
+  removeInvite(inviteId: string): void {
+    const next = this.invitesSignal().filter((invite) => invite.id !== inviteId);
+    this.invitesSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.invites, next);
+    void this.upsertHouseholdDoc('invites', inviteId, { deleted: true, deletedAt: new Date().toISOString() });
+  }
+
+  addHouseholdChangeRequest(request: HouseholdChangeRequest): void {
+    const next = [request, ...this.householdChangeRequestsSignal()];
+    this.householdChangeRequestsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.householdChangeRequests, next);
+    void this.upsertHouseholdDoc('householdChangeRequests', request.id, request);
+  }
+
+  updateHouseholdChangeRequests(requests: HouseholdChangeRequest[]): void {
+    this.householdChangeRequestsSignal.set(requests);
+    this.storage.setItem(STORAGE_KEYS.householdChangeRequests, requests);
+    for (const request of requests) {
+      void this.upsertHouseholdDoc('householdChangeRequests', request.id, request);
+    }
+  }
+
+  addRecurringTemplate(template: RecurringTemplate): void {
+    const next = [template, ...this.recurringTemplatesSignal()];
+    this.recurringTemplatesSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.recurringTemplates, next);
+    void this.upsertHouseholdDoc('recurringTemplates', template.id, template);
+  }
+
+  async ensureRecurringUpToDate(): Promise<void> {
+    if (this.recurringGenerationInFlight) {
+      return;
+    }
+
+    this.recurringGenerationInFlight = true;
+    const templates = this.recurringTemplatesSignal().filter((template) => template.active);
+    const existingKeys = new Set(
+      this.transactionsSignal()
+        .filter((transaction) => transaction.recurringKey)
+        .map((transaction) => transaction.recurringKey as string)
+    );
+
+    const today = new Date();
+    for (const template of templates) {
+      const start = new Date(template.startDate);
+      if (Number.isNaN(start.getTime())) {
+        continue;
+      }
+
+      let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+      const monthLimit = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      while (cursor <= monthLimit) {
+        const year = cursor.getFullYear();
+        const month = cursor.getMonth();
+        const dueDate = this.resolveDueDate(year, month, template.dayOfMonth);
+        if (dueDate <= today) {
+          const recurringKey = `${template.id}_${year}_${month + 1}`;
+          if (!existingKeys.has(recurringKey)) {
+            const transaction: Transaction = {
+              id: createId(),
+              title: template.title,
+              amount: template.amount,
+              categoryId: template.categoryId,
+              paidByUserId: template.paidByUserId,
+              date: dueDate.toISOString(),
+              scope: template.scope,
+              recurring: true,
+              recurringTemplateId: template.id,
+              recurringKey
+            };
+
+            existingKeys.add(recurringKey);
+            this.addTransaction(transaction);
+          }
+        }
+
+        cursor = new Date(year, month + 1, 1);
+      }
+    }
+
+    this.recurringGenerationInFlight = false;
+  }
+
+  categoryById(id: string): BudgetCategory | undefined {
+    return this.categoriesSignal().find((category) => category.id === id);
+  }
+
+  userById(id: string): User | undefined {
+    return this.usersSignal().find((user) => user.id === id);
+  }
+
+  householdById(id: string): Household | undefined {
+    return this.householdsSignal().find((household) => household.id === id);
+  }
+
+  private activeHouseholdId(): string | null {
+    const uid = this.authUidSignal();
+    if (!uid) {
+      return null;
+    }
+
+    return this.userById(uid)?.householdId ?? null;
+  }
+
+  private watchUser(uid: string): void {
+    const userDoc = doc(this.firebase.firestore, 'users', uid);
+    const userUnsub = onSnapshot(userDoc, (snapshot) => {
+      if (!snapshot.exists()) {
+        return;
+      }
+
+      const data = snapshot.data() as User;
+      const users = this.usersSignal().filter((item) => item.id !== uid);
+      const nextUsers = [
+        {
+          ...data,
+          id: uid
+        },
+        ...users
+      ];
+      this.usersSignal.set(nextUsers);
+      this.storage.setItem(STORAGE_KEYS.users, nextUsers);
+
+      this.watchHousehold(data.householdId);
+    });
+
+    this.unsubscribers.push(userUnsub);
+  }
+
+  private watchHousehold(householdId: string): void {
+    const householdDoc = doc(this.firebase.firestore, 'households', householdId);
+    const householdUnsub = onSnapshot(householdDoc, (snapshot) => {
+      if (!snapshot.exists()) {
+        return;
+      }
+
+      const household = { ...(snapshot.data() as Household), id: snapshot.id };
+      const next = [
+        household,
+        ...this.householdsSignal().filter((item) => item.id !== household.id)
+      ];
+      this.householdsSignal.set(next);
+      this.storage.setItem(STORAGE_KEYS.households, next);
+    });
+
+    this.unsubscribers.push(householdUnsub);
+
+    this.watchHouseholdCollection<BudgetCategory>('categories', this.categoriesSignal, STORAGE_KEYS.categories, householdId);
+    this.watchHouseholdCollection<Budget>('budgets', this.budgetsSignal, STORAGE_KEYS.budgets, householdId);
+    this.watchHouseholdCollection<Transaction>('transactions', this.transactionsSignal, STORAGE_KEYS.transactions, householdId);
+    this.watchHouseholdCollection<SavingsGoal>('savings', this.savingsSignal, STORAGE_KEYS.savings, householdId);
+    this.watchHouseholdCollection<InvestmentEntry>('investments', this.investmentsSignal, STORAGE_KEYS.investments, householdId);
+    this.watchHouseholdCollection<Invite>('invites', this.invitesSignal, STORAGE_KEYS.invites, householdId);
+    this.watchHouseholdCollection<HouseholdChangeRequest>(
+      'householdChangeRequests',
+      this.householdChangeRequestsSignal,
+      STORAGE_KEYS.householdChangeRequests,
+      householdId
+    );
+    this.watchHouseholdCollection<RecurringTemplate>(
+      'recurringTemplates',
+      this.recurringTemplatesSignal,
+      STORAGE_KEYS.recurringTemplates,
+      householdId
+    );
+
+    void this.ensureRecurringUpToDate();
+  }
+
+  private watchHouseholdCollection<T extends { id: string }>(
+    collectionName: string,
+    targetSignal: { set: (value: T[]) => void },
+    storageKey: string,
+    householdId: string
+  ): void {
+    const collectionRef = collection(
+      this.firebase.firestore,
+      `households/${householdId}/${collectionName}`
+    ) as CollectionReference<DocumentData>;
+    const unsub = onSnapshot(collectionRef, (snapshot) => {
+      const next = snapshot.docs
+        .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<T, 'id'>) }) as T)
+        .filter((item) => !(item as { deleted?: boolean }).deleted);
+      targetSignal.set(next);
+      this.storage.setItem(storageKey, next);
+      if (collectionName === 'recurringTemplates' || collectionName === 'transactions') {
+        void this.ensureRecurringUpToDate();
+      }
+    });
+
+    this.unsubscribers.push(unsub);
+  }
+
+  private async upsertUser(user: User): Promise<void> {
+    const userRef = doc(this.firebase.firestore, 'users', user.id);
+    await setDoc(userRef, {
+      ...user,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  private async upsertHousehold(household: Household): Promise<void> {
+    const householdRef = doc(this.firebase.firestore, 'households', household.id);
+    await setDoc(householdRef, {
+      ...household,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  private async upsertHouseholdDoc(collectionName: string, id: string, data: object): Promise<void> {
+    const householdId = this.activeHouseholdId();
+    if (!householdId) {
+      return;
+    }
+
+    const ref = doc(this.firebase.firestore, `households/${householdId}/${collectionName}`, id);
+    await setDoc(ref, {
+      ...data,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  private resolveDueDate(year: number, month: number, dayOfMonth: number): Date {
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const resolvedDay = Math.min(dayOfMonth, lastDay);
+    return new Date(year, month, resolvedDay, 12, 0, 0);
+  }
+
+  private cleanupWatchers(): void {
+    while (this.unsubscribers.length) {
+      const unsub = this.unsubscribers.pop();
+      if (unsub) {
+        unsub();
+      }
+    }
+  }
+}

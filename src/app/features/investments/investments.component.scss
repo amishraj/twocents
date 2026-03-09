@@ -1,0 +1,143 @@
+.page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.page-header p {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+}
+
+.card {
+  background: var(--surface-elevated);
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.investment-card {
+  border-left: 4px solid transparent;
+}
+
+.investment-card.info {
+  border-left-color: var(--info);
+  background: linear-gradient(90deg, var(--info-soft), transparent 42%);
+}
+
+.investment-card.success {
+  border-left-color: var(--success);
+  background: linear-gradient(90deg, var(--success-soft), transparent 42%);
+}
+
+.investment-card.warning {
+  border-left-color: var(--warning);
+  background: linear-gradient(90deg, var(--warning-soft), transparent 42%);
+}
+
+.investment-card.neutral {
+  border-left-color: var(--text-muted);
+  background: linear-gradient(90deg, #f8fafc, transparent 42%);
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+input,
+select {
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.primary {
+  border: none;
+  background: var(--accent);
+  color: var(--background);
+  padding: 0.7rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.cards {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+h3 {
+  margin: 0;
+}
+
+p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+}
+
+.amount {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.chip-row {
+  margin-top: 0.8rem;
+}
+
+.type-chip {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+}
+
+.type-chip.info {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.type-chip.success {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.type-chip.warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.type-chip.neutral {
+  color: var(--text-muted);
+  background: #e5e7eb;
+}

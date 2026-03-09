@@ -1,0 +1,184 @@
+.page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.page-header p {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+}
+
+.filters {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr 160px;
+}
+
+input,
+select {
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.card {
+  background: var(--surface-elevated);
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.amount {
+  font-weight: 700;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-btn.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 40;
+}
+
+.editor {
+  position: fixed;
+  inset: auto 0 0 0;
+  background: var(--surface-elevated);
+  border-radius: 20px 20px 0 0;
+  padding: 1.2rem;
+  z-index: 41;
+}
+
+.editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.editor-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.editor-form {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.split {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.ghost,
+.primary {
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+}
+
+.ghost {
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.primary {
+  border: none;
+  background: var(--accent);
+  color: var(--background);
+}
+
+.empty {
+  color: var(--text-muted);
+}
+
+@media (max-width: 700px) {
+  .filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 840px) {
+  .editor {
+    inset: 14% auto auto 50%;
+    transform: translateX(-50%);
+    width: min(560px, 100% - 2rem);
+    border-radius: 20px;
+  }
+
+  .split {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

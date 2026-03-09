@@ -1,0 +1,85 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Savings</h1>
+      <p>Track progress toward your shared goals.</p>
+    </div>
+    <button class="primary" type="button" (click)="toggleForm()">Add goal</button>
+  </div>
+
+  @if (showForm) {
+    <form class="card form" [formGroup]="form" (ngSubmit)="addGoal()">
+      <div class="field">
+        <label>Goal name</label>
+        <input type="text" formControlName="name" />
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label>Target</label>
+          <input type="number" formControlName="targetAmount" min="0" />
+        </div>
+        <div class="field">
+          <label>Current</label>
+          <input type="number" formControlName="currentAmount" min="0" />
+        </div>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label>Account</label>
+          <input type="text" formControlName="accountName" />
+        </div>
+        <div class="field">
+          <label>Scope</label>
+          <select formControlName="scope">
+            <option value="shared">Shared</option>
+            <option value="personal">Personal</option>
+          </select>
+        </div>
+      </div>
+      <button class="primary" type="submit">Save goal</button>
+    </form>
+  }
+
+  <div class="grid">
+    @for (goal of savingsGoals(); track goal.id) {
+      <div class="card">
+        <div class="goal-header">
+          <div>
+            <h3>{{ goal.name }}</h3>
+            <p>{{ goal.accountName }} - {{ goal.scope }}</p>
+          </div>
+          <div class="goal-meta">
+            <span class="status-chip" [ngClass]="goalTone(goal.id)">{{ goalStatus(goal.id) }}</span>
+            <div class="amount">${{ goal.currentAmount | number: '1.0-0' }}</div>
+          </div>
+        </div>
+        <div class="progress">
+          <div class="track">
+            <div
+              class="fill"
+              [ngClass]="goalTone(goal.id)"
+              [style.width.%]="goalProgress(goal.id)"
+            ></div>
+          </div>
+          <div class="meta">
+            {{ goal.currentAmount | number: '1.0-0' }} of {{ goal.targetAmount | number: '1.0-0' }}
+          </div>
+        </div>
+
+        <div class="contribution">
+          <label>Add amount toward this goal</label>
+          <div class="contribution-row">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              [value]="contributionInput()[goal.id] || 0"
+              (input)="setContribution(goal.id, $any($event.target).value)"
+            />
+            <button class="primary" type="button" (click)="addContribution(goal.id)">Add</button>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+</div>

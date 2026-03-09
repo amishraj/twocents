@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSameUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function userHouseholdId() {
+      return userDoc(request.auth.uid).data.householdId;
+    }
+
+    function hasHouseholdAccess(householdId) {
+      return signedIn() && userHouseholdId() == householdId;
+    }
+
+    function isOwner(householdId) {
+      return hasHouseholdAccess(householdId);
+    }
+
+    function isManagerOrOwner(householdId) {
+      return hasHouseholdAccess(householdId);
+    }
+
+    match /users/{uid} {
+      allow read, create, update: if isSameUser(uid);
+      allow delete: if false;
+    }
+
+    match /households/{householdId} {
+      allow read: if hasHouseholdAccess(householdId);
+      allow create: if signedIn();
+      allow update: if isOwner(householdId);
+      allow delete: if false;
+
+      match /categories/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create, update: if isManagerOrOwner(householdId);
+        allow delete: if isOwner(householdId);
+      }
+
+      match /budgets/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create, update: if isManagerOrOwner(householdId);
+        allow delete: if isOwner(householdId);
+      }
+
+      match /transactions/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create, update: if hasHouseholdAccess(householdId);
+        allow delete: if isOwner(householdId);
+      }
+
+      match /savings/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create, update: if hasHouseholdAccess(householdId);
+        allow delete: if isOwner(householdId);
+      }
+
+      match /investments/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create, update: if hasHouseholdAccess(householdId);
+        allow delete: if isOwner(householdId);
+      }
+
+      match /invites/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create: if isManagerOrOwner(householdId);
+        allow update, delete: if isOwner(householdId);
+      }
+
+      match /householdChangeRequests/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create: if hasHouseholdAccess(householdId);
+        allow update: if isOwner(householdId);
+        allow delete: if false;
+      }
+
+      match /recurringTemplates/{docId} {
+        allow read: if hasHouseholdAccess(householdId);
+        allow create, update: if hasHouseholdAccess(householdId);
+        allow delete: if isOwner(householdId);
+      }
+    }
+  }
+}

@@ -1,0 +1,129 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Budgets</h1>
+      <p>Set targets for shared and personal spend.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="ghost" (click)="toggleCategoryForm()">Add category</button>
+      <button type="button" class="primary" (click)="toggleBudgetForm()">Add budget</button>
+    </div>
+  </div>
+
+  @if (showBudgetForm) {
+    <form class="card form" [formGroup]="budgetForm" (ngSubmit)="addBudget()">
+      <div class="field">
+        <label>Category</label>
+        <select formControlName="categoryId">
+          @for (category of categories(); track category.id) {
+            <option [value]="category.id">{{ category.name }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label>Limit</label>
+        <input type="number" formControlName="limit" min="0" />
+      </div>
+      <div class="field">
+        <label>Period</label>
+        <select formControlName="period">
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Scope</label>
+        <select formControlName="scope">
+          <option value="shared">Shared</option>
+          <option value="personal">Personal</option>
+        </select>
+      </div>
+      <button class="primary" type="submit">Save budget</button>
+    </form>
+  }
+
+  @if (showCategoryForm) {
+    <form class="card form" [formGroup]="categoryForm" (ngSubmit)="addCategory()">
+      <div class="field">
+        <label>Name</label>
+        <input type="text" formControlName="name" />
+      </div>
+      <div class="field">
+        <label>Color</label>
+        <input type="color" formControlName="color" />
+      </div>
+      <div class="field">
+        <label>Icon label</label>
+        <input type="text" formControlName="icon" placeholder="tag" />
+      </div>
+      <div class="field">
+        <label>Default scope</label>
+        <select formControlName="defaultScope">
+          <option value="shared">Shared</option>
+          <option value="personal">Personal</option>
+        </select>
+      </div>
+      <button class="primary" type="submit">Save category</button>
+    </form>
+  }
+
+  <section class="budget-section">
+    <div class="section-header">
+      <h2>Shared - {{ householdName() }}</h2>
+      <span>{{ sharedBudgetSummaries().length }} budgets</span>
+    </div>
+    <div class="grid">
+      @for (item of sharedBudgetSummaries(); track item.budget.id) {
+        <div class="card budget-card">
+          <div class="title">
+            <span class="dot" [style.background]="item.category?.color"></span>
+            <div>
+              <h3>{{ item.category?.name || 'Category' }}</h3>
+              <p>{{ item.budget.period }}</p>
+            </div>
+          </div>
+          <div class="stats">
+            <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
+            <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
+            <div class="track">
+              <div class="fill" [style.width.%]="item.percent" [style.background]="item.category?.color"></div>
+            </div>
+          </div>
+        </div>
+      }
+      @if (sharedBudgetSummaries().length === 0) {
+        <p class="empty">No shared budgets yet.</p>
+      }
+    </div>
+  </section>
+
+  <section class="budget-section">
+    <div class="section-header">
+      <h2>Personal</h2>
+      <span>{{ personalBudgetSummaries().length }} budgets</span>
+    </div>
+    <div class="grid">
+      @for (item of personalBudgetSummaries(); track item.budget.id) {
+        <div class="card budget-card">
+          <div class="title">
+            <span class="dot" [style.background]="item.category?.color"></span>
+            <div>
+              <h3>{{ item.category?.name || 'Category' }}</h3>
+              <p>{{ item.budget.period }}</p>
+            </div>
+          </div>
+          <div class="stats">
+            <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
+            <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
+            <div class="track">
+              <div class="fill" [style.width.%]="item.percent" [style.background]="item.category?.color"></div>
+            </div>
+          </div>
+        </div>
+      }
+      @if (personalBudgetSummaries().length === 0) {
+        <p class="empty">No personal budgets yet.</p>
+      }
+    </div>
+  </section>
+</div>

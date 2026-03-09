@@ -1,0 +1,99 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Profile & household</h1>
+      <p>Manage personal details and shared household settings.</p>
+    </div>
+    <a routerLink="/investments" class="ghost-link">Go to investments</a>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Profile</h2>
+      <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" class="form">
+        <div class="field">
+          <label>Name</label>
+          <input type="text" formControlName="name" />
+        </div>
+        <div class="field">
+          <label>Monthly income</label>
+          <input type="number" formControlName="incomeMonthly" min="0" />
+        </div>
+        <button class="primary" type="submit">Save profile</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Household</h2>
+      <p class="meta">{{ household()?.name }} - {{ household()?.type }}</p>
+
+      <div class="member-list">
+        @for (member of household()?.members ?? []; track member.userId) {
+          <div class="member-row">
+            <span>{{ member.displayName }}</span>
+            <span class="chip">{{ member.role }}</span>
+          </div>
+        }
+      </div>
+
+      <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()" class="form invite-form">
+        <div class="field">
+          <label>Invite by email</label>
+          <input type="email" formControlName="email" placeholder="partner@email.com" />
+          <p class="field-help">We send this email through EmailJS with your invite link and code.</p>
+        </div>
+        <button class="primary" type="submit">Send invite</button>
+      </form>
+
+      <div class="code-box">
+        <div>
+          <p class="meta">Invite code</p>
+          <div class="code">{{ household()?.inviteCode || '------' }}</div>
+        </div>
+        <div class="code-actions">
+          <button class="ghost-link" type="button" (click)="copyInviteLink()">Copy link</button>
+          <button class="ghost-link" type="button" (click)="regenerateInviteCode()">Regenerate</button>
+        </div>
+      </div>
+
+      @if (canShowJoinByCode()) {
+        <form [formGroup]="codeJoinForm" (ngSubmit)="requestJoinByCode()" class="form invite-form">
+          <div class="field">
+            <label>Join household by code</label>
+            <input type="text" formControlName="code" placeholder="ABC123" />
+          </div>
+          <button class="primary" type="submit">Join household</button>
+        </form>
+      }
+
+      @if (householdMessage) {
+        <p class="notice">{{ householdMessage }}</p>
+      }
+
+      <div class="invite-list">
+        @for (invite of invitesForHousehold(); track invite.id) {
+          <div class="invite-row">
+            <span>{{ invite.email }}</span>
+            <div class="invite-actions">
+              <span class="chip pending">{{ invite.status }}</span>
+              @if (invite.status === 'pending') {
+                <button type="button" class="cancel-btn" (click)="cancelInvite(invite.id)">Cancel</button>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="invite-list">
+        @for (request of requestsForCurrentHousehold(); track request.id) {
+          <div class="invite-row">
+            <span>Move request - {{ request.status }}</span>
+            @if (request.status === 'pending' && request.userId !== user()?.id) {
+              <button type="button" class="approve-btn" (click)="approveRequest(request.id)">Approve</button>
+            }
+          </div>
+        }
+      </div>
+    </section>
+  </div>
+</div>

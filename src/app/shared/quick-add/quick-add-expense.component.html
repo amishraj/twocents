@@ -1,0 +1,70 @@
+@if (ui.quickAddOpen()) {
+  <div class="overlay" (click)="close()"></div>
+  <div class="sheet">
+    <div class="sheet-header">
+      <div>
+        <h3>Add expense</h3>
+        <p>Track shared or personal spend instantly.</p>
+      </div>
+      <button type="button" class="icon-button" (click)="close()">X</button>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <div class="field">
+        <label>Title</label>
+        <input type="text" formControlName="title" placeholder="Groceries, rent, coffee" />
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label>Amount</label>
+          <input type="number" formControlName="amount" min="0" step="0.01" placeholder="Enter amount" />
+        </div>
+        <div class="field">
+          <label>Category</label>
+          <select formControlName="categoryId">
+            @for (category of categories(); track category.id) {
+              <option [value]="category.id">{{ category.name }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label>Paid by</label>
+          <select formControlName="paidByUserId">
+            @if (activeUser()) {
+              <option [value]="activeUser()?.id">{{ activeUser()?.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label>Date</label>
+          <input type="date" formControlName="date" />
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label>Scope</label>
+          <select formControlName="scope">
+            <option value="shared">Shared</option>
+            <option value="personal">Personal</option>
+          </select>
+        </div>
+        <div class="field checkbox">
+          <label>
+            <input type="checkbox" formControlName="recurring" />
+            Recurring monthly
+          </label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="ghost" (click)="close()">Cancel</button>
+        <button type="submit" class="primary">Add expense</button>
+      </div>
+    </form>
+  </div>
+}

@@ -1,0 +1,123 @@
+<div class="shell">
+  @if (colorPickerOpen()) {
+    <button class="theme-backdrop" type="button" (click)="closeColorPicker()" aria-label="Close theme picker"></button>
+  }
+
+  <header class="topbar">
+    <button class="menu-btn mobile-only" type="button" (click)="openSidenav()" aria-label="Open menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+
+    <div class="brand">
+      <div class="logo">B</div>
+      <div class="brand-text">
+        <span class="title">TwoCents</span>
+        <span class="subtitle">Household finance</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="theme-control" aria-label="Theme color picker">
+        <button class="theme-trigger" type="button" (click)="toggleColorPicker()" aria-haspopup="dialog">
+          <span class="theme-preview" [style.background]="activeThemeColor()"></span>
+          <span>Theme</span>
+          <span class="chevron" [class.open]="colorPickerOpen()">▾</span>
+        </button>
+
+        @if (colorPickerOpen()) {
+          <div class="theme-popover" role="dialog" aria-label="Pick a theme color">
+            <p class="theme-title">Choose your vibe</p>
+            <div class="theme-grid">
+              @for (color of themeColors; track color) {
+                <button
+                  type="button"
+                  class="swatch"
+                  [class.active]="activeThemeColor() === color"
+                  [style.background]="color"
+                  (click)="setThemeColor(color)"
+                  [attr.aria-label]="'Set theme color ' + color"
+                ></button>
+              }
+            </div>
+            <label class="custom-color">
+              <span>Custom</span>
+              <input type="color" [value]="activeThemeColor()" (input)="setThemeColor($any($event.target).value)" />
+            </label>
+          </div>
+        }
+      </div>
+      <button class="ghost" type="button" (click)="openQuickAdd()">Quick add</button>
+      <button class="ghost" type="button" (click)="signOut()">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="desktop-nav">
+    @for (item of navItems; track item.route) {
+      <a class="nav-link" [routerLink]="item.route" routerLinkActive="active">{{ item.label }}</a>
+    }
+  </nav>
+
+  @if (sidenavOpen()) {
+    <button class="sidenav-overlay" type="button" (click)="closeSidenav()" aria-label="Close menu"></button>
+  }
+
+  <aside class="sidenav" [class.open]="sidenavOpen()">
+    <div class="sidenav-head">
+      <p>Navigate</p>
+      <button class="menu-btn" type="button" (click)="closeSidenav()" aria-label="Close menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <nav class="sidenav-links">
+      @for (item of navItems; track item.route) {
+        <a
+          class="sidenav-link"
+          [routerLink]="item.route"
+          routerLinkActive="active"
+          (click)="closeSidenav()"
+        >
+          {{ item.label }}
+        </a>
+      }
+    </nav>
+  </aside>
+
+  <div class="content">
+    <router-outlet />
+  </div>
+
+  @if (pendingInvite()) {
+    <div class="invite-overlay" role="dialog" aria-modal="true" aria-label="Household invite">
+      <div class="invite-modal">
+        <p class="invite-kicker">Household invite</p>
+        <h3>
+          Join{{ pendingInvite()?.householdName ? ' ' + pendingInvite()?.householdName : ' household' }}?
+        </h3>
+        <p>
+          Invite code: <strong>{{ pendingInvite()?.code }}</strong>
+        </p>
+        <p class="invite-meta">
+          Accept to request joining this household. If your current household has other members, they may need to approve your leave request first.
+        </p>
+        <div class="invite-actions">
+          <button type="button" class="ghost" (click)="declineInvite()">Decline</button>
+          <button type="button" class="primary-action" (click)="acceptInvite()">Accept</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (inviteActionMessage) {
+    <p class="invite-toast">{{ inviteActionMessage }}</p>
+  }
+
+  <button class="fab" type="button" (click)="openQuickAdd()" aria-label="Add expense">
+    +
+  </button>
+
+  <app-quick-add-expense />
+</div>

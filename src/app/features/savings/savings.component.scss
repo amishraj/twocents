@@ -1,0 +1,171 @@
+.page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.page-header p {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+}
+
+.card {
+  background: var(--surface-elevated);
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+label {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+input,
+select {
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.primary {
+  border: none;
+  background: var(--accent);
+  color: var(--background);
+  padding: 0.7rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.goal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.goal-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.4rem;
+}
+
+.status-chip {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+}
+
+.status-chip.danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.status-chip.warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.status-chip.success {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+h3 {
+  margin: 0;
+}
+
+p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+}
+
+.amount {
+  font-weight: 700;
+}
+
+.progress {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.track {
+  background: var(--surface-strong);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+}
+
+.fill.danger {
+  background: var(--danger);
+}
+
+.fill.warning {
+  background: var(--warning);
+}
+
+.fill.success {
+  background: var(--success);
+}
+
+.meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.contribution {
+  margin-top: 0.95rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.contribution label {
+  font-size: 0.85rem;
+}
+
+.contribution-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.6rem;
+}
+
+@media (min-width: 920px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
