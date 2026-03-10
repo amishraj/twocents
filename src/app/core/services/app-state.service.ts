@@ -63,6 +63,11 @@ export class AppStateService {
 
   private readonly authUidSignal = signal<string | null>(null);
   private readonly unsubscribers: Unsubscribe[] = [];
+  private readonly householdUnsubscribers: Unsubscribe[] = [];
+  private readonly pendingTransactionWrites = new Map<string, object>();
+  private householdTransactionsCache: Transaction[] = [];
+  private personalFallbackTransactionsCache: Transaction[] = [];
+  private watchedScopeKey: string | null = null;
   private recurringGenerationInFlight = false;
 
   readonly users = computed(() => this.usersSignal());
@@ -86,6 +91,7 @@ export class AppStateService {
 
       this.authUidSignal.set(authUser.uid);
       this.watchUser(authUser.uid);
+      void this.flushPendingTransactionWrites();
     });
   }
 
@@ -106,13 +112,7 @@ export class AppStateService {
   updateHouseholds(households: Household[]): void {
     this.householdsSignal.set(households);
     this.storage.setItem(STORAGE_KEYS.households, households);
-    const activeHouseholdId = this.activeHouseholdId();
-    if (!activeHouseholdId) {
-      return;
-    }
-
-    const household = households.find((item) => item.id === activeHouseholdId);
-    if (household) {
+    for (const household of households) {
       void this.upsertHousehold(household);
     }
   }
@@ -140,17 +140,21 @@ export class AppStateService {
   }
 
   addTransaction(transaction: Transaction): void {
-    const next = [transaction, ...this.transactionsSignal()];
+    const normalized: Transaction = {
+      ...transaction,
+      scope: this.activeHouseholdId() ? transaction.scope : 'personal'
+    };
+    const next = [normalized, ...this.transactionsSignal()];
     this.transactionsSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.transactions, next);
-    void this.upsertHouseholdDoc('transactions', transaction.id, transaction);
+    void this.upsertTransactionDoc(normalized.id, normalized);
   }
 
   removeTransaction(transactionId: string): void {
     const next = this.transactionsSignal().filter((transaction) => transaction.id !== transactionId);
     this.transactionsSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.transactions, next);
-    void this.upsertHouseholdDoc('transactions', transactionId, { deleted: true, deletedAt: new Date().toISOString() });
+    void this.upsertTransactionDoc(transactionId, { deleted: true, deletedAt: new Date().toISOString() });
   }
 
   addSavingsGoal(goal: SavingsGoal): void {
@@ -176,10 +180,14 @@ export class AppStateService {
   }
 
   updateTransactions(transactions: Transaction[]): void {
-    this.transactionsSignal.set(transactions);
-    this.storage.setItem(STORAGE_KEYS.transactions, transactions);
-    for (const transaction of transactions) {
-      void this.upsertHouseholdDoc('transactions', transaction.id, transaction);
+    const normalized = transactions.map((transaction) => ({
+      ...transaction,
+      scope: this.activeHouseholdId() ? transaction.scope : 'personal'
+    }));
+    this.transactionsSignal.set(normalized);
+    this.storage.setItem(STORAGE_KEYS.transactions, normalized);
+    for (const transaction of normalized) {
+      void this.upsertTransactionDoc(transaction.id, transaction);
     }
   }
 
@@ -308,7 +316,17 @@ export class AppStateService {
       return null;
     }
 
-    return this.userById(uid)?.householdId ?? null;
+    const householdId = this.userById(uid)?.householdId;
+    if (!householdId || householdId.trim().length === 0) {
+      return null;
+    }
+
+    const household = this.householdById(householdId);
+    if (!household) {
+      return householdId;
+    }
+
+    return household.members.some((member) => member.userId === uid) ? householdId : null;
   }
 
   private watchUser(uid: string): void {
@@ -330,7 +348,7 @@ export class AppStateService {
       this.usersSignal.set(nextUsers);
       this.storage.setItem(STORAGE_KEYS.users, nextUsers);
 
-      this.watchHousehold(data.householdId);
+      this.switchDataScope(uid);
     });
 
     this.unsubscribers.push(userUnsub);
@@ -350,13 +368,18 @@ export class AppStateService {
       ];
       this.householdsSignal.set(next);
       this.storage.setItem(STORAGE_KEYS.households, next);
+
+      const currentUid = this.authUidSignal();
+      if (currentUid) {
+        this.switchDataScope(currentUid);
+      }
     });
 
-    this.unsubscribers.push(householdUnsub);
+    this.householdUnsubscribers.push(householdUnsub);
 
     this.watchHouseholdCollection<BudgetCategory>('categories', this.categoriesSignal, STORAGE_KEYS.categories, householdId);
     this.watchHouseholdCollection<Budget>('budgets', this.budgetsSignal, STORAGE_KEYS.budgets, householdId);
-    this.watchHouseholdCollection<Transaction>('transactions', this.transactionsSignal, STORAGE_KEYS.transactions, householdId);
+    this.watchScopedTransactions(householdId);
     this.watchHouseholdCollection<SavingsGoal>('savings', this.savingsSignal, STORAGE_KEYS.savings, householdId);
     this.watchHouseholdCollection<InvestmentEntry>('investments', this.investmentsSignal, STORAGE_KEYS.investments, householdId);
     this.watchHouseholdCollection<Invite>('invites', this.invitesSignal, STORAGE_KEYS.invites, householdId);
@@ -373,6 +396,73 @@ export class AppStateService {
       householdId
     );
 
+    void this.ensureRecurringUpToDate();
+  }
+
+  private watchPersonalTransactions(uid: string): void {
+    const transactionsRef = collection(
+      this.firebase.firestore,
+      `users/${uid}/transactions`
+    ) as CollectionReference<DocumentData>;
+
+    const unsub = onSnapshot(transactionsRef, (snapshot) => {
+      const next = snapshot.docs
+        .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<Transaction, 'id'>) }) as Transaction)
+        .filter((item) => !(item as { deleted?: boolean }).deleted);
+      this.transactionsSignal.set(next);
+      this.storage.setItem(STORAGE_KEYS.transactions, next);
+      void this.ensureRecurringUpToDate();
+    });
+
+    this.householdUnsubscribers.push(unsub);
+  }
+
+  private watchScopedTransactions(householdId: string): void {
+    this.householdTransactionsCache = [];
+    this.personalFallbackTransactionsCache = [];
+
+    const householdTransactionsRef = collection(
+      this.firebase.firestore,
+      `households/${householdId}/transactions`
+    ) as CollectionReference<DocumentData>;
+
+    const householdUnsub = onSnapshot(householdTransactionsRef, (snapshot) => {
+      this.householdTransactionsCache = snapshot.docs
+        .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<Transaction, 'id'>) }) as Transaction)
+        .filter((item) => !(item as { deleted?: boolean }).deleted);
+      this.publishScopedTransactions();
+    });
+    this.householdUnsubscribers.push(householdUnsub);
+
+    const uid = this.authUidSignal();
+    if (!uid) {
+      return;
+    }
+
+    const personalTransactionsRef = collection(
+      this.firebase.firestore,
+      `users/${uid}/transactions`
+    ) as CollectionReference<DocumentData>;
+
+    const personalUnsub = onSnapshot(personalTransactionsRef, (snapshot) => {
+      this.personalFallbackTransactionsCache = snapshot.docs
+        .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<Transaction, 'id'>) }) as Transaction)
+        .filter((item) => !(item as { deleted?: boolean }).deleted);
+      this.publishScopedTransactions();
+    });
+    this.householdUnsubscribers.push(personalUnsub);
+  }
+
+  private publishScopedTransactions(): void {
+    const merged = [...this.householdTransactionsCache];
+    for (const transaction of this.personalFallbackTransactionsCache) {
+      if (!merged.some((item) => item.id === transaction.id)) {
+        merged.push(transaction);
+      }
+    }
+
+    this.transactionsSignal.set(merged);
+    this.storage.setItem(STORAGE_KEYS.transactions, merged);
     void this.ensureRecurringUpToDate();
   }
 
@@ -397,13 +487,33 @@ export class AppStateService {
       }
     });
 
-    this.unsubscribers.push(unsub);
+    this.householdUnsubscribers.push(unsub);
+  }
+
+  private switchDataScope(uid: string): void {
+    const householdId = this.activeHouseholdId();
+    const scopeKey = householdId ? `household:${householdId}` : `personal:${uid}`;
+    if (this.watchedScopeKey === scopeKey) {
+      return;
+    }
+
+    this.cleanupHouseholdWatchers();
+    this.watchedScopeKey = scopeKey;
+
+    if (householdId) {
+      this.watchHousehold(householdId);
+      void this.flushPendingTransactionWrites();
+      return;
+    }
+
+    this.watchPersonalTransactions(uid);
+    void this.flushPendingTransactionWrites();
   }
 
   private async upsertUser(user: User): Promise<void> {
     const userRef = doc(this.firebase.firestore, 'users', user.id);
     await setDoc(userRef, {
-      ...user,
+      ...this.toFirestoreData(user),
       updatedAt: serverTimestamp()
     }, { merge: true });
   }
@@ -411,7 +521,7 @@ export class AppStateService {
   private async upsertHousehold(household: Household): Promise<void> {
     const householdRef = doc(this.firebase.firestore, 'households', household.id);
     await setDoc(householdRef, {
-      ...household,
+      ...this.toFirestoreData(household),
       updatedAt: serverTimestamp()
     }, { merge: true });
   }
@@ -424,9 +534,67 @@ export class AppStateService {
 
     const ref = doc(this.firebase.firestore, `households/${householdId}/${collectionName}`, id);
     await setDoc(ref, {
-      ...data,
+      ...this.toFirestoreData(data),
       updatedAt: serverTimestamp()
     }, { merge: true });
+  }
+
+  private async upsertTransactionDoc(id: string, data: object): Promise<void> {
+    const uid = this.authUidSignal();
+    if (!uid) {
+      this.pendingTransactionWrites.set(id, data);
+      return;
+    }
+
+    const householdId = this.activeHouseholdId();
+    const payload = {
+      ...this.toFirestoreData(data),
+      updatedAt: serverTimestamp()
+    };
+
+    const writes: Promise<void>[] = [];
+    if (householdId) {
+      const householdRef = doc(this.firebase.firestore, `households/${householdId}/transactions`, id);
+      writes.push(setDoc(householdRef, payload, { merge: true }));
+    }
+
+    const userRef = doc(this.firebase.firestore, `users/${uid}/transactions`, id);
+    writes.push(setDoc(userRef, payload, { merge: true }));
+
+    const results = await Promise.allSettled(writes);
+    const anySucceeded = results.some((result) => result.status === 'fulfilled');
+    if (anySucceeded) {
+      this.pendingTransactionWrites.delete(id);
+      return;
+    }
+
+    this.pendingTransactionWrites.set(id, data);
+    const firstError = results.find((result) => result.status === 'rejected');
+    if (firstError && firstError.status === 'rejected') {
+      console.error('[AppState] Transaction write failed for all paths', {
+        transactionId: id,
+        householdId,
+        uid,
+        error: firstError.reason
+      });
+    }
+  }
+
+  private toFirestoreData(data: object): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+  }
+
+  private async flushPendingTransactionWrites(): Promise<void> {
+    if (!this.authUidSignal() || this.pendingTransactionWrites.size === 0) {
+      return;
+    }
+
+    const entries = Array.from(this.pendingTransactionWrites.entries());
+    this.pendingTransactionWrites.clear();
+
+    for (const [id, data] of entries) {
+      await this.upsertTransactionDoc(id, data);
+    }
   }
 
   private resolveDueDate(year: number, month: number, dayOfMonth: number): Date {
@@ -436,11 +604,24 @@ export class AppStateService {
   }
 
   private cleanupWatchers(): void {
+    this.cleanupHouseholdWatchers();
+    this.watchedScopeKey = null;
     while (this.unsubscribers.length) {
       const unsub = this.unsubscribers.pop();
       if (unsub) {
         unsub();
       }
     }
+  }
+
+  private cleanupHouseholdWatchers(): void {
+    while (this.householdUnsubscribers.length) {
+      const unsub = this.householdUnsubscribers.pop();
+      if (unsub) {
+        unsub();
+      }
+    }
+    this.householdTransactionsCache = [];
+    this.personalFallbackTransactionsCache = [];
   }
 }

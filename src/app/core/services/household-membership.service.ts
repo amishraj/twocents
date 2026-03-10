@@ -1,36 +1,43 @@
 import { Injectable, inject } from '@angular/core';
 import { AuthService } from './auth.service';
 import { AppStateService } from './app-state.service';
-import { createId, createInviteCode } from '../utils/id';
+import { FirebaseClientService } from './firebase-client.service';
+import { Household } from '../models/app.models';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 
 @Injectable({ providedIn: 'root' })
 export class HouseholdMembershipService {
   private readonly auth = inject(AuthService);
   private readonly appState = inject(AppStateService);
+  private readonly firebase = inject(FirebaseClientService);
 
-  requestJoinByCode(rawCode: string): string {
+  async requestJoinByCode(rawCode: string): Promise<string> {
     const activeUser = this.auth.getActiveUser();
     if (!activeUser) {
-      return 'Sign in first to join a household.';
+      return Promise.resolve('Sign in first to join a household.');
     }
 
     const currentHousehold = this.appState.householdById(activeUser.householdId);
-    if (!currentHousehold) {
-      return 'Your current household could not be found.';
-    }
-
     const code = rawCode.toUpperCase().trim();
-    const targetHousehold = this.appState.households().find((item) => item.inviteCode === code);
+    const targetHousehold = await this.findHouseholdByInviteCode(code);
 
     if (!targetHousehold) {
       return 'Invite code is invalid.';
     }
 
-    if (targetHousehold.id === currentHousehold.id) {
+    if (currentHousehold && targetHousehold.id === currentHousehold.id) {
       return 'You are already in this household.';
     }
 
-    this.joinHousehold(activeUser.id, currentHousehold.id, targetHousehold.id, activeUser.name);
+    if (targetHousehold.members.some((member) => member.userId === activeUser.id)) {
+      this.auth.updateUser({
+        ...activeUser,
+        householdId: targetHousehold.id
+      });
+      return `Joined ${targetHousehold.name}.`;
+    }
+
+    this.joinHousehold(activeUser.id, currentHousehold?.id, targetHousehold, activeUser.name);
     return `Joined ${targetHousehold.name}.`;
   }
 
@@ -42,31 +49,8 @@ export class HouseholdMembershipService {
 
     const currentHousehold = this.appState.householdById(activeUser.householdId);
     if (!currentHousehold) {
-      return 'Current household could not be found.';
+      return 'You are not part of a household right now.';
     }
-
-    if (currentHousehold.members.length <= 1) {
-      return 'You are already in your own household.';
-    }
-
-    const now = new Date().toISOString();
-    const newHouseholdId = createId();
-    const newHousehold = {
-      id: newHouseholdId,
-      name: `${activeUser.name} Household`,
-      type: 'solo' as const,
-      members: [
-        {
-          userId: activeUser.id,
-          role: 'owner' as const,
-          displayName: activeUser.name,
-          joinedAt: now
-        }
-      ],
-      sharedBudgetEnabled: true,
-      inviteCode: createInviteCode(),
-      currency: activeUser.preferences.currency || 'USD'
-    };
 
     const households = this.appState.households()
       .map((household) => {
@@ -83,16 +67,34 @@ export class HouseholdMembershipService {
 
     this.auth.updateUser({
       ...activeUser,
-      householdId: newHouseholdId
+      householdId: ''
     });
 
-    this.appState.updateHouseholds([newHousehold, ...households]);
-    return 'You left the household and moved to your own household.';
+    this.appState.updateHouseholds(households);
+    return 'You left the household.';
   }
 
-  private joinHousehold(userId: string, fromHouseholdId: string, targetHouseholdId: string, name: string): void {
+  private async findHouseholdByInviteCode(code: string): Promise<Household | null> {
+    const local = this.appState.households().find((item) => item.inviteCode === code);
+    if (local) {
+      return local;
+    }
+
+    const householdsRef = collection(this.firebase.firestore, 'households');
+    const q = query(householdsRef, where('inviteCode', '==', code), limit(1));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      return null;
+    }
+
+    const docSnap = snapshot.docs[0];
+    return { id: docSnap.id, ...(docSnap.data() as Omit<Household, 'id'>) };
+  }
+
+  private joinHousehold(userId: string, fromHouseholdId: string | undefined, targetHousehold: Household, name: string): void {
+    const targetHouseholdId = targetHousehold.id;
     const households = this.appState.households().map((household) => {
-      if (household.id === fromHouseholdId) {
+      if (fromHouseholdId && household.id === fromHouseholdId) {
         return {
           ...household,
           members: household.members.filter((member) => member.userId !== userId)
@@ -122,6 +124,25 @@ export class HouseholdMembershipService {
       return household;
     });
 
+    const hasTargetHouseholdLocally = households.some((household) => household.id === targetHouseholdId);
+    const nextHouseholds = hasTargetHouseholdLocally
+      ? households
+      : [
+          {
+            ...targetHousehold,
+            members: [
+              ...targetHousehold.members,
+              {
+                userId,
+                role: 'member' as const,
+                displayName: name || 'Member',
+                joinedAt: new Date().toISOString()
+              }
+            ]
+          },
+          ...households
+        ];
+
     const activeUser = this.auth.getActiveUser();
     if (activeUser) {
       this.auth.updateUser({
@@ -130,6 +151,6 @@ export class HouseholdMembershipService {
       });
     }
 
-    this.appState.updateHouseholds(households);
+    this.appState.updateHouseholds(nextHouseholds);
   }
 }

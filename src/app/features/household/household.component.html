@@ -70,6 +70,28 @@
 
   <section class="card">
     <div class="section-head">
+      <h3>Recent household transactions</h3>
+      <span>Latest shared expenses</span>
+    </div>
+    <div class="transaction-list">
+      @for (transaction of recentHouseholdTransactions(); track transaction.id) {
+        <div class="transaction-row">
+          <div>
+            <strong>{{ transaction.title }}</strong>
+            <p class="meta">{{ transaction.categoryName }} • Paid by {{ transaction.paidByName }}</p>
+          </div>
+          <div class="transaction-amount">${{ transaction.amount | number: '1.2-2' }}</div>
+        </div>
+      }
+
+      @if (recentHouseholdTransactions().length === 0) {
+        <p class="meta">No shared transactions yet.</p>
+      }
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
       <h3>Shared budgets</h3>
       <span>{{ household()?.name || 'Household' }}</span>
     </div>

@@ -18,7 +18,6 @@ import { AuthSession, User } from '../models/app.models';
 import { AppStateService } from './app-state.service';
 import { FirebaseClientService } from './firebase-client.service';
 import { StorageService } from './storage.service';
-import { createId, createInviteCode } from '../utils/id';
 
 const STORAGE_KEYS = {
   auth: 'bt_auth'
@@ -176,61 +175,40 @@ export class AuthService {
     name: string,
     email: string
   ): Promise<void> {
-    const householdId = createId();
     const now = new Date().toISOString();
     const user: User = {
       id: userCredential.user.uid,
       name,
       email,
       incomeMonthly: 0,
-      householdId,
+      householdId: '',
       preferences: {
         currency: 'USD',
         weekStartsOn: 1,
-        onboarded: false,
+        onboarded: true,
         themeColor: '#0284c7'
       },
       createdAt: now
     };
 
     this.appState.updateUsers([user, ...this.appState.users().filter((item) => item.id !== user.id)]);
-    this.appState.updateHouseholds([
-      {
-        id: householdId,
-        name: `${name} Household`,
-        type: 'solo',
-        members: [
-          {
-            userId: user.id,
-            role: 'owner',
-            displayName: name,
-            joinedAt: now
-          }
-        ],
-        sharedBudgetEnabled: true,
-        inviteCode: createInviteCode(),
-        currency: 'USD'
-      },
-      ...this.appState.households().filter((item) => item.id !== householdId)
-    ]);
   }
 
   private async ensureUserProfile(uid: string, displayName: string, email: string): Promise<void> {
     const userDocRef = doc(this.firebase.firestore, 'users', uid);
     const existing = await getDoc(userDocRef);
     if (!existing.exists()) {
-      const householdId = createId();
       const now = new Date().toISOString();
       const user: User = {
         id: uid,
         name: displayName || email.split('@')[0] || 'User',
         email,
         incomeMonthly: 0,
-        householdId,
+        householdId: '',
         preferences: {
           currency: 'USD',
           weekStartsOn: 1,
-          onboarded: false,
+          onboarded: true,
           themeColor: '#0284c7'
         },
         createdAt: now
@@ -241,46 +219,7 @@ export class AuthService {
         updatedAt: serverTimestamp()
       });
 
-      await setDoc(doc(this.firebase.firestore, 'households', householdId), {
-        id: householdId,
-        name: `${user.name} Household`,
-        type: 'solo',
-        members: [
-          {
-            userId: uid,
-            role: 'owner',
-            displayName: user.name,
-            joinedAt: now
-          }
-        ],
-        sharedBudgetEnabled: true,
-        inviteCode: createInviteCode(),
-        currency: 'USD',
-        createdBy: uid,
-        createdAt: now,
-        updatedAt: serverTimestamp()
-      });
-
       this.appState.updateUsers([user, ...this.appState.users().filter((item) => item.id !== user.id)]);
-      this.appState.updateHouseholds([
-        {
-          id: householdId,
-          name: `${user.name} Household`,
-          type: 'solo',
-          members: [
-            {
-              userId: uid,
-              role: 'owner',
-              displayName: user.name,
-              joinedAt: now
-            }
-          ],
-          sharedBudgetEnabled: true,
-          inviteCode: createInviteCode(),
-          currency: 'USD'
-        },
-        ...this.appState.households().filter((item) => item.id !== householdId)
-      ]);
     }
   }
 

@@ -107,13 +107,13 @@ export class ShellComponent {
     void this.auth.signOut();
   }
 
-  acceptInvite(): void {
+  async acceptInvite(): Promise<void> {
     const invite = this.pendingInvite();
     if (!invite) {
       return;
     }
 
-    const message = this.membership.requestJoinByCode(invite.code);
+    const message = await this.membership.requestJoinByCode(invite.code);
     this.showInviteToast(message);
 
     if (message.startsWith('Joined ') || message === 'You are already in this household.') {

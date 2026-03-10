@@ -35,16 +35,12 @@ export class ProfileComponent {
 
   canShowJoinByCode = computed(() => {
     const household = this.household();
-    if (!household) {
-      return false;
-    }
-
-    return household.members.length <= 1;
+    return !household;
   });
 
   canLeaveHousehold = computed(() => {
     const household = this.household();
-    return Boolean(household && household.members.length > 1);
+    return Boolean(household);
   });
 
   invitesForHousehold = computed(() => {
@@ -214,7 +210,7 @@ export class ProfileComponent {
     this.householdMessage = `New invite code generated: ${next.inviteCode}`;
   }
 
-  requestJoinByCode(): void {
+  async requestJoinByCode(): Promise<void> {
     this.householdMessage = '';
     if (this.codeJoinForm.invalid) {
       this.codeJoinForm.markAllAsTouched();
@@ -222,7 +218,7 @@ export class ProfileComponent {
     }
 
     const code = (this.codeJoinForm.value.code ?? '').toUpperCase().trim();
-    this.householdMessage = this.membership.requestJoinByCode(code);
+    this.householdMessage = await this.membership.requestJoinByCode(code);
     if (
       this.householdMessage.startsWith('Joined ') ||
       this.householdMessage === 'You are already in this household.'

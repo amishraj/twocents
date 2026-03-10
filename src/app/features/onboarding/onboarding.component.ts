@@ -63,4 +63,20 @@ export class OnboardingComponent {
     this.auth.updateUser(updatedUser);
     void this.router.navigate(['/dashboard']);
   }
+
+  skip(): void {
+    const activeUser = this.auth.getActiveUser();
+    if (!activeUser) {
+      return;
+    }
+
+    this.auth.updateUser({
+      ...activeUser,
+      preferences: {
+        ...activeUser.preferences,
+        onboarded: true
+      }
+    });
+    void this.router.navigate(['/dashboard']);
+  }
 }

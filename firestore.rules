@@ -32,12 +32,16 @@ service cloud.firestore {
     match /users/{uid} {
       allow read, create, update: if isSameUser(uid);
       allow delete: if false;
+
+      match /transactions/{docId} {
+        allow read, create, update, delete: if isSameUser(uid);
+      }
     }
 
     match /households/{householdId} {
-      allow read: if hasHouseholdAccess(householdId);
+      allow read: if signedIn();
       allow create: if signedIn();
-      allow update: if isOwner(householdId);
+      allow update: if signedIn();
       allow delete: if false;
 
       match /categories/{docId} {

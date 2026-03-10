@@ -86,7 +86,8 @@
 
 .member-grid,
 .budget-list,
-.savings-list {
+.savings-list,
+.transaction-list {
   display: grid;
   gap: 0.75rem;
 }
@@ -99,10 +100,22 @@
 
 .member-card,
 .budget-item,
-.savings-item {
+.savings-item,
+.transaction-row {
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   padding: 0.8rem;
+}
+
+.transaction-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.transaction-amount {
+  font-weight: 700;
 }
 
 .row {

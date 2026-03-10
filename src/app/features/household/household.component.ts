@@ -41,7 +41,7 @@ export class HouseholdComponent {
 
   canLeaveHousehold = computed(() => {
     const household = this.household();
-    return Boolean(household && household.members.length > 1);
+    return Boolean(household);
   });
 
   members = computed(() => {
@@ -124,6 +124,20 @@ export class HouseholdComponent {
     this.appState.savingsGoals().filter((goal) => goal.scope === 'shared')
   );
 
+  recentHouseholdTransactions = computed(() => {
+    const memberLookup = new Map(this.members().map((member) => [member.userId, member.displayName]));
+    return this.appState
+      .transactions()
+      .filter((transaction) => transaction.scope === 'shared')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 8)
+      .map((transaction) => ({
+        ...transaction,
+        paidByName: memberLookup.get(transaction.paidByUserId) ?? 'Member',
+        categoryName: this.appState.categoryById(transaction.categoryId)?.name ?? 'Uncategorized'
+      }));
+  });
+
   setContribution(goalId: string, value: string): void {
     const amount = Number(value);
     this.contributionInput.set({
@@ -148,7 +162,7 @@ export class HouseholdComponent {
     });
   }
 
-  joinHousehold(): void {
+  async joinHousehold(): Promise<void> {
     this.joinMessage = '';
     if (this.joinForm.invalid) {
       this.joinForm.markAllAsTouched();
@@ -156,7 +170,7 @@ export class HouseholdComponent {
     }
 
     const code = (this.joinForm.value.code ?? '').toUpperCase().trim();
-    this.joinMessage = this.membership.requestJoinByCode(code);
+    this.joinMessage = await this.membership.requestJoinByCode(code);
 
     if (this.joinMessage.startsWith('Joined ') || this.joinMessage === 'You are already in this household.') {
       this.inviteFlow.clearPendingInviteCode();
