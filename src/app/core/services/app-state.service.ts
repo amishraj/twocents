@@ -13,6 +13,7 @@ import {
 } from '../models/app.models';
 import { FirebaseClientService } from './firebase-client.service';
 import { StorageService } from './storage.service';
+import { ToastService } from '../../shared/toast/toast.service';
 import {
   CollectionReference,
   DocumentData,
@@ -43,6 +44,7 @@ const STORAGE_KEYS = {
 export class AppStateService {
   private readonly storage = inject(StorageService);
   private readonly firebase = inject(FirebaseClientService);
+  private readonly toast = inject(ToastService);
 
   private readonly usersSignal = signal<User[]>(this.storage.getItem(STORAGE_KEYS.users, []));
   private readonly householdsSignal = signal<Household[]>(this.storage.getItem(STORAGE_KEYS.households, []));
@@ -169,6 +171,13 @@ export class AppStateService {
     this.investmentsSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.investments, next);
     void this.upsertHouseholdDoc('investments', entry.id, entry);
+  }
+
+  removeBudget(budgetId: string): void {
+    const next = this.budgetsSignal().filter((budget) => budget.id !== budgetId);
+    this.budgetsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.budgets, next);
+    void this.upsertHouseholdDoc('budgets', budgetId, { deleted: true, deletedAt: new Date().toISOString() });
   }
 
   updateBudgets(budgets: Budget[]): void {
@@ -506,8 +515,42 @@ export class AppStateService {
       return;
     }
 
-    this.watchPersonalTransactions(uid);
+    this.watchPersonalCollections(uid);
     void this.flushPendingTransactionWrites();
+  }
+
+  private watchPersonalCollections(uid: string): void {
+    this.watchPersonalTransactions(uid);
+    this.watchUserCollection<BudgetCategory>('categories', this.categoriesSignal, STORAGE_KEYS.categories, uid);
+    this.watchUserCollection<Budget>('budgets', this.budgetsSignal, STORAGE_KEYS.budgets, uid);
+    this.watchUserCollection<SavingsGoal>('savings', this.savingsSignal, STORAGE_KEYS.savings, uid);
+    this.watchUserCollection<InvestmentEntry>('investments', this.investmentsSignal, STORAGE_KEYS.investments, uid);
+    this.watchUserCollection<RecurringTemplate>('recurringTemplates', this.recurringTemplatesSignal, STORAGE_KEYS.recurringTemplates, uid);
+    void this.ensureRecurringUpToDate();
+  }
+
+  private watchUserCollection<T extends { id: string }>(
+    collectionName: string,
+    targetSignal: { set: (value: T[]) => void },
+    storageKey: string,
+    uid: string
+  ): void {
+    const collectionRef = collection(
+      this.firebase.firestore,
+      `users/${uid}/${collectionName}`
+    ) as CollectionReference<DocumentData>;
+    const unsub = onSnapshot(collectionRef, (snapshot) => {
+      const next = snapshot.docs
+        .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<T, 'id'>) }) as T)
+        .filter((item) => !(item as { deleted?: boolean }).deleted);
+      targetSignal.set(next);
+      this.storage.setItem(storageKey, next);
+      if (collectionName === 'recurringTemplates') {
+        void this.ensureRecurringUpToDate();
+      }
+    });
+
+    this.householdUnsubscribers.push(unsub);
   }
 
   private async upsertUser(user: User): Promise<void> {
@@ -528,15 +571,24 @@ export class AppStateService {
 
   private async upsertHouseholdDoc(collectionName: string, id: string, data: object): Promise<void> {
     const householdId = this.activeHouseholdId();
-    if (!householdId) {
+    const uid = this.authUidSignal();
+
+    if (householdId) {
+      const ref = doc(this.firebase.firestore, `households/${householdId}/${collectionName}`, id);
+      await setDoc(ref, {
+        ...this.toFirestoreData(data),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
       return;
     }
 
-    const ref = doc(this.firebase.firestore, `households/${householdId}/${collectionName}`, id);
-    await setDoc(ref, {
-      ...this.toFirestoreData(data),
-      updatedAt: serverTimestamp()
-    }, { merge: true });
+    if (uid) {
+      const ref = doc(this.firebase.firestore, `users/${uid}/${collectionName}`, id);
+      await setDoc(ref, {
+        ...this.toFirestoreData(data),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
   }
 
   private async upsertTransactionDoc(id: string, data: object): Promise<void> {
@@ -577,6 +629,7 @@ export class AppStateService {
         uid,
         error: firstError.reason
       });
+      this.toast.error('Failed to sync transaction. Will retry on next connection.');
     }
   }
 

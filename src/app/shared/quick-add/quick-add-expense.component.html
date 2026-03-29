@@ -22,10 +22,11 @@
         </div>
         <div class="field">
           <label>Category</label>
-          <select formControlName="categoryId">
+          <select formControlName="categoryId" (change)="onCategorySelect($event)">
             @for (category of categories(); track category.id) {
               <option [value]="category.id">{{ category.name }}</option>
             }
+            <option value="__new__">+ New category</option>
           </select>
         </div>
       </div>
@@ -67,4 +68,11 @@
       </div>
     </form>
   </div>
+}
+
+@if (showCategoryModal()) {
+  <app-category-modal
+    (created)="onCategoryCreated($event)"
+    (closed)="closeCategoryModal()"
+  />
 }

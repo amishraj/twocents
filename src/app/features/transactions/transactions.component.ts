@@ -5,11 +5,13 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { Scope } from '../../core/models/app.models';
 import { AppStateService } from '../../core/services/app-state.service';
+import { ToastService } from '../../shared/toast/toast.service';
+import { CategoryModalComponent } from '../../shared/category-modal/category-modal.component';
 
 @Component({
   selector: 'app-transactions',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, CategoryModalComponent],
   templateUrl: './transactions.component.html',
   styleUrl: './transactions.component.scss'
 })
@@ -17,7 +19,10 @@ export class TransactionsComponent {
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   public appState = inject(AppStateService);
+  private readonly toast = inject(ToastService);
   editingId = signal<string | null>(null);
+  confirmDeleteId = signal<string | null>(null);
+  showCategoryModal = signal(false);
 
   filterForm = this.fb.group({
     query: [''],
@@ -79,9 +84,27 @@ export class TransactionsComponent {
     this.editingId.set(null);
   }
 
+  onEditCategorySelect(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === '__new__') {
+      this.showCategoryModal.set(true);
+      this.editForm.patchValue({ categoryId: '' });
+    }
+  }
+
+  onCategoryCreated(id: string): void {
+    this.showCategoryModal.set(false);
+    this.editForm.patchValue({ categoryId: id });
+  }
+
+  closeCategoryModal(): void {
+    this.showCategoryModal.set(false);
+  }
+
   saveEdit(): void {
     if (this.editForm.invalid || !this.editingId()) {
       this.editForm.markAllAsTouched();
+      this.toast.warning('Please fill in all required fields.');
       return;
     }
 
@@ -103,20 +126,26 @@ export class TransactionsComponent {
 
     this.appState.updateTransactions(next);
     this.editingId.set(null);
+    this.toast.success('Transaction updated.');
   }
 
-  deleteTransaction(transactionId: string): void {
-    const transaction = this.appState.transactions().find((item) => item.id === transactionId);
-    if (!transaction) {
-      return;
-    }
+  requestDelete(transactionId: string): void {
+    this.confirmDeleteId.set(transactionId);
+  }
 
-    const confirmed = window.confirm(`Delete transaction \"${transaction.title}\"?`);
-    if (!confirmed) {
+  cancelDelete(): void {
+    this.confirmDeleteId.set(null);
+  }
+
+  confirmDelete(): void {
+    const transactionId = this.confirmDeleteId();
+    if (!transactionId) {
       return;
     }
 
     this.appState.removeTransaction(transactionId);
+    this.confirmDeleteId.set(null);
+    this.toast.success('Transaction deleted.');
     if (this.editingId() === transactionId) {
       this.cancelEdit();
     }

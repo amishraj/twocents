@@ -6,6 +6,7 @@ import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
 import { HouseholdMembershipService } from '../../core/services/household-membership.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
+import { ToastService } from '../../shared/toast/toast.service';
 
 @Component({
   selector: 'app-household',
@@ -20,8 +21,10 @@ export class HouseholdComponent {
   private readonly auth = inject(AuthService);
   private readonly membership = inject(HouseholdMembershipService);
   private readonly inviteFlow = inject(InviteFlowService);
+  private readonly toast = inject(ToastService);
 
   contributionInput = signal<Record<string, number>>({});
+  confirmLeave = signal(false);
   joinMessage = '';
 
   joinForm = this.fb.group({
@@ -166,11 +169,12 @@ export class HouseholdComponent {
     this.joinMessage = '';
     if (this.joinForm.invalid) {
       this.joinForm.markAllAsTouched();
+      this.toast.warning('Please enter a valid invite code.');
       return;
     }
 
-    const code = (this.joinForm.value.code ?? '').toUpperCase().trim();
-    this.joinMessage = await this.membership.requestJoinByCode(code);
+    this.joinMessage = await this.membership.requestJoinByCode(this.joinForm.value.code ?? '');
+    this.toast.info(this.joinMessage);
 
     if (this.joinMessage.startsWith('Joined ') || this.joinMessage === 'You are already in this household.') {
       this.inviteFlow.clearPendingInviteCode();
@@ -179,7 +183,17 @@ export class HouseholdComponent {
     this.joinForm.reset({ code: '' });
   }
 
+  requestLeave(): void {
+    this.confirmLeave.set(true);
+  }
+
+  cancelLeave(): void {
+    this.confirmLeave.set(false);
+  }
+
   leaveHousehold(): void {
+    this.confirmLeave.set(false);
     this.joinMessage = this.membership.leaveCurrentHousehold();
+    this.toast.info(this.joinMessage);
   }
 }

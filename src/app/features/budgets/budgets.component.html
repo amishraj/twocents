@@ -5,7 +5,6 @@
       <p>Set targets for shared and personal spend.</p>
     </div>
     <div class="actions">
-      <button type="button" class="ghost" (click)="toggleCategoryForm()">Add category</button>
       <button type="button" class="primary" (click)="toggleBudgetForm()">Add budget</button>
     </div>
   </div>
@@ -14,10 +13,11 @@
     <form class="card form" [formGroup]="budgetForm" (ngSubmit)="addBudget()">
       <div class="field">
         <label>Category</label>
-        <select formControlName="categoryId">
+        <select formControlName="categoryId" (change)="onBudgetCategorySelect($event)">
           @for (category of categories(); track category.id) {
             <option [value]="category.id">{{ category.name }}</option>
           }
+          <option value="__new__">+ New category</option>
         </select>
       </div>
       <div class="field">
@@ -42,31 +42,6 @@
     </form>
   }
 
-  @if (showCategoryForm) {
-    <form class="card form" [formGroup]="categoryForm" (ngSubmit)="addCategory()">
-      <div class="field">
-        <label>Name</label>
-        <input type="text" formControlName="name" />
-      </div>
-      <div class="field">
-        <label>Color</label>
-        <input type="color" formControlName="color" />
-      </div>
-      <div class="field">
-        <label>Icon label</label>
-        <input type="text" formControlName="icon" placeholder="tag" />
-      </div>
-      <div class="field">
-        <label>Default scope</label>
-        <select formControlName="defaultScope">
-          <option value="shared">Shared</option>
-          <option value="personal">Personal</option>
-        </select>
-      </div>
-      <button class="primary" type="submit">Save category</button>
-    </form>
-  }
-
   <section class="budget-section">
     <div class="section-header">
       <h2>Shared - {{ householdName() }}</h2>
@@ -81,6 +56,9 @@
               <h3>{{ item.category?.name || 'Category' }}</h3>
               <p>{{ item.budget.period }}</p>
             </div>
+            <button type="button" class="icon-btn danger" (click)="removeBudget(item.budget.id)" aria-label="Delete budget">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
           </div>
           <div class="stats">
             <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
@@ -111,6 +89,9 @@
               <h3>{{ item.category?.name || 'Category' }}</h3>
               <p>{{ item.budget.period }}</p>
             </div>
+            <button type="button" class="icon-btn danger" (click)="removeBudget(item.budget.id)" aria-label="Delete budget">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
           </div>
           <div class="stats">
             <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
@@ -126,4 +107,11 @@
       }
     </div>
   </section>
+
+  @if (showCategoryModal()) {
+    <app-category-modal
+      (created)="onCategoryCreated($event)"
+      (closed)="closeCategoryModal()"
+    />
+  }
 </div>

@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
+import { ToastService } from '../../shared/toast/toast.service';
 import { createId } from '../../core/utils/id';
 
 @Component({
@@ -14,12 +15,13 @@ import { createId } from '../../core/utils/id';
 export class InvestmentsComponent {
   private readonly fb = inject(FormBuilder);
   public appState = inject(AppStateService);
+  private readonly toast = inject(ToastService);
 
   showForm = false;
 
   form = this.fb.group({
     label: ['', Validators.required],
-    amount: [0, [Validators.required, Validators.min(0)]],
+    amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     accountName: ['', Validators.required],
     type: ['brokerage', Validators.required]
   });
@@ -31,6 +33,7 @@ export class InvestmentsComponent {
   addEntry(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      this.toast.warning('Please fill in all required fields.');
       return;
     }
 
@@ -43,9 +46,11 @@ export class InvestmentsComponent {
       type: (value.type ?? 'brokerage') as 'brokerage' | 'retirement' | 'crypto' | 'other'
     });
 
+    this.toast.success(`Investment "${value.label}" added.`);
+
     this.form.reset({
       label: '',
-      amount: 0,
+      amount: null,
       accountName: '',
       type: 'brokerage'
     });

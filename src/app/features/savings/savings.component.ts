@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
+import { ToastService } from '../../shared/toast/toast.service';
 import { Scope } from '../../core/models/app.models';
 import { createId } from '../../core/utils/id';
 
@@ -15,6 +16,7 @@ import { createId } from '../../core/utils/id';
 export class SavingsComponent {
   private readonly fb = inject(FormBuilder);
   public appState = inject(AppStateService);
+  private readonly toast = inject(ToastService);
   contributionInput = signal<Record<string, number>>({});
   savingsGoals = computed(() => this.appState.savingsGoals());
 
@@ -22,7 +24,7 @@ export class SavingsComponent {
 
   form = this.fb.group({
     name: ['', Validators.required],
-    targetAmount: [0, [Validators.required, Validators.min(0)]],
+    targetAmount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     currentAmount: [0, [Validators.required, Validators.min(0)]],
     accountName: ['', Validators.required],
     scope: ['shared', Validators.required]
@@ -35,6 +37,7 @@ export class SavingsComponent {
   addGoal(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      this.toast.warning('Please fill in all required fields.');
       return;
     }
 
@@ -48,9 +51,11 @@ export class SavingsComponent {
       scope: (value.scope ?? 'shared') as Scope
     });
 
+    this.toast.success(`Savings goal "${value.name}" created.`);
+
     this.form.reset({
       name: '',
-      targetAmount: 0,
+      targetAmount: null,
       currentAmount: 0,
       accountName: '',
       scope: 'shared'
@@ -84,6 +89,7 @@ export class SavingsComponent {
     });
 
     this.appState.updateSavings(nextGoals);
+    this.toast.success(`$${amount} contributed.`);
     this.contributionInput.set({
       ...this.contributionInput(),
       [goalId]: 0

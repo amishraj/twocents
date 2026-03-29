@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -7,6 +7,7 @@ import { AppStateService } from '../../core/services/app-state.service';
 import { HouseholdMembershipService } from '../../core/services/household-membership.service';
 import { InviteEmailService } from '../../core/services/invite-email.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
+import { ToastService } from '../../shared/toast/toast.service';
 import { createId, createInviteCode } from '../../core/utils/id';
 
 @Component({
@@ -23,9 +24,11 @@ export class ProfileComponent {
   private readonly membership = inject(HouseholdMembershipService);
   private readonly inviteEmailService = inject(InviteEmailService);
   private readonly inviteFlow = inject(InviteFlowService);
+  private readonly toast = inject(ToastService);
   public appState = inject(AppStateService);
 
   householdMessage = '';
+  confirmLeave = signal(false);
 
   user = computed(() => this.auth.getActiveUser());
   household = computed(() => {
@@ -86,7 +89,7 @@ export class ProfileComponent {
     }
 
     this.route.queryParamMap.subscribe((params) => {
-      const inviteCode = (params.get('inviteCode') ?? '').toUpperCase().trim();
+      const inviteCode = params.get('inviteCode') ?? '';
       if (!inviteCode) {
         return;
       }
@@ -106,6 +109,7 @@ export class ProfileComponent {
     const activeUser = this.user();
     if (!activeUser || this.profileForm.invalid) {
       this.profileForm.markAllAsTouched();
+      this.toast.warning('Please fill in all required fields.');
       return;
     }
 
@@ -114,6 +118,7 @@ export class ProfileComponent {
       name: this.profileForm.value.name ?? activeUser.name,
       incomeMonthly: Number(this.profileForm.value.incomeMonthly ?? activeUser.incomeMonthly)
     });
+    this.toast.success('Profile saved.');
   }
 
   async sendInvite(): Promise<void> {
@@ -217,8 +222,7 @@ export class ProfileComponent {
       return;
     }
 
-    const code = (this.codeJoinForm.value.code ?? '').toUpperCase().trim();
-    this.householdMessage = await this.membership.requestJoinByCode(code);
+    this.householdMessage = await this.membership.requestJoinByCode(this.codeJoinForm.value.code ?? '');
     if (
       this.householdMessage.startsWith('Joined ') ||
       this.householdMessage === 'You are already in this household.'
@@ -229,7 +233,16 @@ export class ProfileComponent {
     this.codeJoinForm.reset({ code: '' });
   }
 
+  requestLeave(): void {
+    this.confirmLeave.set(true);
+  }
+
+  cancelLeave(): void {
+    this.confirmLeave.set(false);
+  }
+
   leaveHousehold(): void {
+    this.confirmLeave.set(false);
     this.householdMessage = this.membership.leaveCurrentHousehold();
   }
 
@@ -245,7 +258,7 @@ export class ProfileComponent {
       return;
     }
 
-    const approverHousehold = this.appState.householdById(request.fromHouseholdId);
+    const approverHousehold = this.appState.householdById(request.targetHouseholdId);
     const approverMember = approverHousehold?.members.find((member) => member.userId === activeUser.id);
     if (!approverMember || approverMember.role !== 'owner') {
       return;

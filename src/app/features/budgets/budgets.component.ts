@@ -1,15 +1,17 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../shared/toast/toast.service';
+import { CategoryModalComponent } from '../../shared/category-modal/category-modal.component';
 import { Scope } from '../../core/models/app.models';
 import { createId } from '../../core/utils/id';
 
 @Component({
   selector: 'app-budgets',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, CategoryModalComponent],
   templateUrl: './budgets.component.html',
   styleUrl: './budgets.component.scss'
 })
@@ -17,6 +19,8 @@ export class BudgetsComponent {
   private readonly fb = inject(FormBuilder);
   public appState = inject(AppStateService);
   private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
+  showCategoryModal = signal(false);
 
   categories = computed(() => this.appState.categories());
   activeUser = computed(() => this.auth.getActiveUser());
@@ -75,20 +79,12 @@ export class BudgetsComponent {
   );
 
   showBudgetForm = false;
-  showCategoryForm = false;
 
   budgetForm = this.fb.group({
     categoryId: ['', Validators.required],
-    limit: [0, [Validators.required, Validators.min(0)]],
+    limit: [null as number | null, [Validators.required, Validators.min(0.01)]],
     period: ['monthly', Validators.required],
     scope: ['shared', Validators.required]
-  });
-
-  categoryForm = this.fb.group({
-    name: ['', Validators.required],
-    color: ['#0ea5e9', Validators.required],
-    icon: ['tag', Validators.required],
-    defaultScope: ['shared', Validators.required]
   });
 
   constructor() {
@@ -101,13 +97,34 @@ export class BudgetsComponent {
     this.showBudgetForm = !this.showBudgetForm;
   }
 
-  toggleCategoryForm(): void {
-    this.showCategoryForm = !this.showCategoryForm;
+  onBudgetCategorySelect(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === '__new__') {
+      this.showCategoryModal.set(true);
+      this.budgetForm.patchValue({ categoryId: '' });
+    }
+  }
+
+  onCategoryCreated(id: string): void {
+    this.showCategoryModal.set(false);
+    this.budgetForm.patchValue({ categoryId: id });
+  }
+
+  closeCategoryModal(): void {
+    this.showCategoryModal.set(false);
+    if (!this.budgetForm.value.categoryId) {
+      this.budgetForm.patchValue({ categoryId: this.categories()[0]?.id ?? '' });
+    }
   }
 
   addBudget(): void {
     if (this.budgetForm.invalid) {
       this.budgetForm.markAllAsTouched();
+      if (!this.budgetForm.value.categoryId) {
+        this.toast.warning('Please select or create a category first.');
+      } else {
+        this.toast.warning('Please fill in all required fields.');
+      }
       return;
     }
 
@@ -127,9 +144,11 @@ export class BudgetsComponent {
       householdId: activeUser.householdId
     });
 
+    this.toast.success('Budget created.');
+
     this.budgetForm.reset({
       categoryId: this.categories()[0]?.id ?? '',
-      limit: 0,
+      limit: null,
       period: 'monthly',
       scope: 'shared'
     });
@@ -137,27 +156,8 @@ export class BudgetsComponent {
     this.showBudgetForm = false;
   }
 
-  addCategory(): void {
-    if (this.categoryForm.invalid) {
-      this.categoryForm.markAllAsTouched();
-      return;
-    }
-
-    const value = this.categoryForm.getRawValue();
-    this.appState.addCategory({
-      id: createId(),
-      name: value.name ?? 'New category',
-      color: value.color ?? '#0ea5e9',
-      icon: value.icon ?? 'tag',
-      defaultScope: (value.defaultScope ?? 'shared') as Scope
-    });
-
-    this.categoryForm.reset({
-      name: '',
-      color: '#0ea5e9',
-      icon: 'tag',
-      defaultScope: 'shared'
-    });
-    this.showCategoryForm = false;
+  removeBudget(budgetId: string): void {
+    this.appState.removeBudget(budgetId);
+    this.toast.success('Budget removed.');
   }
 }

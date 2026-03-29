@@ -24,7 +24,15 @@
         <h3>Leave household</h3>
         <span>Move back to your own personal household instantly</span>
       </div>
-      <button type="button" class="leave-btn" (click)="leaveHousehold()">Leave household now</button>
+      @if (confirmLeave()) {
+        <div class="confirm-row">
+          <span>Are you sure? You will lose access to shared data.</span>
+          <button type="button" class="ghost" (click)="cancelLeave()">Cancel</button>
+          <button type="button" class="leave-btn" (click)="leaveHousehold()">Yes, leave</button>
+        </div>
+      } @else {
+        <button type="button" class="leave-btn" (click)="requestLeave()">Leave household now</button>
+      }
       @if (joinMessage) {
         <p class="meta">{{ joinMessage }}</p>
       }

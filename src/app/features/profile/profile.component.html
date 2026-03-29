@@ -67,7 +67,15 @@
       }
 
       @if (canLeaveHousehold()) {
-        <button class="danger-btn" type="button" (click)="leaveHousehold()">Leave household</button>
+        @if (confirmLeave()) {
+          <div class="confirm-row">
+            <span>Are you sure? You will lose access to shared data.</span>
+            <button type="button" class="ghost" (click)="cancelLeave()">Cancel</button>
+            <button class="danger-btn" type="button" (click)="leaveHousehold()">Yes, leave</button>
+          </div>
+        } @else {
+          <button class="danger-btn" type="button" (click)="requestLeave()">Leave household</button>
+        }
       }
 
       @if (householdMessage) {

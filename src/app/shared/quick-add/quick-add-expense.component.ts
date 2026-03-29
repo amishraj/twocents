@@ -1,16 +1,18 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiStateService } from '../../core/services/ui-state.service';
+import { ToastService } from '../toast/toast.service';
+import { CategoryModalComponent } from '../category-modal/category-modal.component';
 import { RecurringTemplate, Scope } from '../../core/models/app.models';
 import { createId } from '../../core/utils/id';
 
 @Component({
   selector: 'app-quick-add-expense',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, CategoryModalComponent],
   templateUrl: './quick-add-expense.component.html',
   styleUrl: './quick-add-expense.component.scss'
 })
@@ -18,10 +20,12 @@ export class QuickAddExpenseComponent {
   private readonly fb = inject(FormBuilder);
   private readonly appState = inject(AppStateService);
   private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
   public ui = inject(UiStateService);
 
   categories = computed(() => this.appState.categories());
   activeUser = computed(() => this.auth.getActiveUser());
+  showCategoryModal = signal(false);
 
   form = this.fb.group({
     title: ['', Validators.required],
@@ -50,9 +54,34 @@ export class QuickAddExpenseComponent {
     this.ui.closeQuickAdd();
   }
 
+  onCategorySelect(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === '__new__') {
+      this.showCategoryModal.set(true);
+      this.form.patchValue({ categoryId: '' });
+    }
+  }
+
+  onCategoryCreated(id: string): void {
+    this.showCategoryModal.set(false);
+    this.form.patchValue({ categoryId: id });
+  }
+
+  closeCategoryModal(): void {
+    this.showCategoryModal.set(false);
+    if (!this.form.value.categoryId) {
+      this.form.patchValue({ categoryId: this.categories()[0]?.id ?? '' });
+    }
+  }
+
   submit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      if (!this.form.value.categoryId) {
+        this.toast.warning('Please select or create a category first.');
+      } else {
+        this.toast.warning('Please fill in all required fields.');
+      }
       return;
     }
 
@@ -94,6 +123,8 @@ export class QuickAddExpenseComponent {
       this.appState.addRecurringTemplate(template);
       void this.appState.ensureRecurringUpToDate();
     }
+
+    this.toast.success(`Expense "${value.title}" added.`);
 
     this.form.reset({
       title: '',

@@ -27,12 +27,17 @@
         </div>
         <div class="row-actions">
           <div class="amount">${{ transaction.amount | number: '1.2-2' }}</div>
-          <button type="button" class="icon-btn" (click)="startEdit(transaction.id)" aria-label="Edit transaction">
-            <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          </button>
-          <button type="button" class="icon-btn danger" (click)="deleteTransaction(transaction.id)" aria-label="Delete transaction">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          </button>
+          @if (confirmDeleteId() === transaction.id) {
+            <button type="button" class="icon-btn" (click)="cancelDelete()" aria-label="Cancel delete">Cancel</button>
+            <button type="button" class="icon-btn danger" (click)="confirmDelete()" aria-label="Confirm delete">Delete?</button>
+          } @else {
+            <button type="button" class="icon-btn" (click)="startEdit(transaction.id)" aria-label="Edit transaction">
+              <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="icon-btn danger" (click)="requestDelete(transaction.id)" aria-label="Delete transaction">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+          }
         </div>
       </div>
     }
@@ -66,10 +71,11 @@
         <div class="split">
           <div class="field">
             <label>Category</label>
-            <select formControlName="categoryId">
+            <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
               @for (category of appState.categories(); track category.id) {
                 <option [value]="category.id">{{ category.name }}</option>
               }
+              <option value="__new__">+ New category</option>
             </select>
           </div>
           <div class="field">
@@ -86,5 +92,12 @@
         </div>
       </form>
     </div>
+  }
+
+  @if (showCategoryModal()) {
+    <app-category-modal
+      (created)="onCategoryCreated($event)"
+      (closed)="closeCategoryModal()"
+    />
   }
 </div>

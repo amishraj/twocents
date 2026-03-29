@@ -7,11 +7,12 @@ import { HouseholdMembershipService } from '../../core/services/household-member
 import { InviteFlowService } from '../../core/services/invite-flow.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { QuickAddExpenseComponent } from '../quick-add/quick-add-expense.component';
+import { ToastComponent } from '../toast/toast.component';
 
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, QuickAddExpenseComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, QuickAddExpenseComponent, ToastComponent],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss'
 })
