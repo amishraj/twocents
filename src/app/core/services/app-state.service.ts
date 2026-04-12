@@ -100,7 +100,7 @@ export class AppStateService {
   updateUsers(users: User[]): void {
     this.usersSignal.set(users);
     this.storage.setItem(STORAGE_KEYS.users, users);
-    const currentUid = this.authUidSignal();
+    const currentUid = this.authUidSignal() ?? this.firebase.auth.currentUser?.uid ?? null;
     if (!currentUid) {
       return;
     }
@@ -135,16 +135,20 @@ export class AppStateService {
   }
 
   addBudget(budget: Budget): void {
-    const next = [budget, ...this.budgetsSignal()];
+    const normalized: Budget = {
+      ...budget,
+      scope: this.resolveScope(budget.scope)
+    };
+    const next = [normalized, ...this.budgetsSignal()];
     this.budgetsSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.budgets, next);
-    void this.upsertHouseholdDoc('budgets', budget.id, budget);
+    void this.upsertHouseholdDoc('budgets', normalized.id, normalized);
   }
 
   addTransaction(transaction: Transaction): void {
     const normalized: Transaction = {
       ...transaction,
-      scope: this.activeHouseholdId() ? transaction.scope : 'personal'
+      scope: this.resolveScope(transaction.scope)
     };
     const next = [normalized, ...this.transactionsSignal()];
     this.transactionsSignal.set(next);
@@ -160,10 +164,14 @@ export class AppStateService {
   }
 
   addSavingsGoal(goal: SavingsGoal): void {
-    const next = [goal, ...this.savingsSignal()];
+    const normalized: SavingsGoal = {
+      ...goal,
+      scope: this.resolveScope(goal.scope)
+    };
+    const next = [normalized, ...this.savingsSignal()];
     this.savingsSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.savings, next);
-    void this.upsertHouseholdDoc('savings', goal.id, goal);
+    void this.upsertHouseholdDoc('savings', normalized.id, normalized);
   }
 
   addInvestment(entry: InvestmentEntry): void {
@@ -181,9 +189,13 @@ export class AppStateService {
   }
 
   updateBudgets(budgets: Budget[]): void {
-    this.budgetsSignal.set(budgets);
-    this.storage.setItem(STORAGE_KEYS.budgets, budgets);
-    for (const budget of budgets) {
+    const normalized = budgets.map((budget) => ({
+      ...budget,
+      scope: this.resolveScope(budget.scope)
+    }));
+    this.budgetsSignal.set(normalized);
+    this.storage.setItem(STORAGE_KEYS.budgets, normalized);
+    for (const budget of normalized) {
       void this.upsertHouseholdDoc('budgets', budget.id, budget);
     }
   }
@@ -191,7 +203,7 @@ export class AppStateService {
   updateTransactions(transactions: Transaction[]): void {
     const normalized = transactions.map((transaction) => ({
       ...transaction,
-      scope: this.activeHouseholdId() ? transaction.scope : 'personal'
+      scope: this.resolveScope(transaction.scope)
     }));
     this.transactionsSignal.set(normalized);
     this.storage.setItem(STORAGE_KEYS.transactions, normalized);
@@ -201,9 +213,13 @@ export class AppStateService {
   }
 
   updateSavings(goals: SavingsGoal[]): void {
-    this.savingsSignal.set(goals);
-    this.storage.setItem(STORAGE_KEYS.savings, goals);
-    for (const goal of goals) {
+    const normalized = goals.map((goal) => ({
+      ...goal,
+      scope: this.resolveScope(goal.scope)
+    }));
+    this.savingsSignal.set(normalized);
+    this.storage.setItem(STORAGE_KEYS.savings, normalized);
+    for (const goal of normalized) {
       void this.upsertHouseholdDoc('savings', goal.id, goal);
     }
   }
@@ -246,10 +262,14 @@ export class AppStateService {
   }
 
   addRecurringTemplate(template: RecurringTemplate): void {
-    const next = [template, ...this.recurringTemplatesSignal()];
+    const normalized: RecurringTemplate = {
+      ...template,
+      scope: this.resolveScope(template.scope)
+    };
+    const next = [normalized, ...this.recurringTemplatesSignal()];
     this.recurringTemplatesSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.recurringTemplates, next);
-    void this.upsertHouseholdDoc('recurringTemplates', template.id, template);
+    void this.upsertHouseholdDoc('recurringTemplates', normalized.id, normalized);
   }
 
   async ensureRecurringUpToDate(): Promise<void> {
@@ -336,6 +356,14 @@ export class AppStateService {
     }
 
     return household.members.some((member) => member.userId === uid) ? householdId : null;
+  }
+
+  private resolveScope(scope: 'personal' | 'shared'): 'personal' | 'shared' {
+    if (scope === 'shared' && !this.activeHouseholdId()) {
+      return 'personal';
+    }
+
+    return scope;
   }
 
   private watchUser(uid: string): void {
@@ -654,6 +682,46 @@ export class AppStateService {
     const lastDay = new Date(year, month + 1, 0).getDate();
     const resolvedDay = Math.min(dayOfMonth, lastDay);
     return new Date(year, month, resolvedDay, 12, 0, 0);
+  }
+
+  async adminResetAllData(): Promise<void> {
+    const now = new Date().toISOString();
+    const writes: Promise<void>[] = [];
+
+    for (const tx of this.transactionsSignal()) {
+      writes.push(this.upsertTransactionDoc(tx.id, { deleted: true, deletedAt: now }));
+    }
+    for (const cat of this.categoriesSignal()) {
+      writes.push(this.upsertHouseholdDoc('categories', cat.id, { deleted: true, deletedAt: now }));
+    }
+    for (const budget of this.budgetsSignal()) {
+      writes.push(this.upsertHouseholdDoc('budgets', budget.id, { deleted: true, deletedAt: now }));
+    }
+    for (const goal of this.savingsSignal()) {
+      writes.push(this.upsertHouseholdDoc('savings', goal.id, { deleted: true, deletedAt: now }));
+    }
+    for (const inv of this.investmentsSignal()) {
+      writes.push(this.upsertHouseholdDoc('investments', inv.id, { deleted: true, deletedAt: now }));
+    }
+    for (const tmpl of this.recurringTemplatesSignal()) {
+      writes.push(this.upsertHouseholdDoc('recurringTemplates', tmpl.id, { deleted: true, deletedAt: now }));
+    }
+
+    await Promise.allSettled(writes);
+
+    this.transactionsSignal.set([]);
+    this.categoriesSignal.set([]);
+    this.budgetsSignal.set([]);
+    this.savingsSignal.set([]);
+    this.investmentsSignal.set([]);
+    this.recurringTemplatesSignal.set([]);
+
+    this.storage.setItem(STORAGE_KEYS.transactions, []);
+    this.storage.setItem(STORAGE_KEYS.categories, []);
+    this.storage.setItem(STORAGE_KEYS.budgets, []);
+    this.storage.setItem(STORAGE_KEYS.savings, []);
+    this.storage.setItem(STORAGE_KEYS.investments, []);
+    this.storage.setItem(STORAGE_KEYS.recurringTemplates, []);
   }
 
   private cleanupWatchers(): void {

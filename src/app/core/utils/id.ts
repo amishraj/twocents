@@ -15,3 +15,8 @@ export const createInviteCode = (): string => {
   }
   return code;
 };
+
+export const createInviteExpiry = (hours = 1): string => {
+  const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+  return expiresAt.toISOString();
+};

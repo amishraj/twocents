@@ -36,6 +36,7 @@ export interface Household {
   members: HouseholdMember[];
   sharedBudgetEnabled: boolean;
   inviteCode: string;
+  inviteCodeExpiresAt?: string;
   currency: string;
 }
 

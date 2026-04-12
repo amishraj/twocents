@@ -18,15 +18,23 @@ export class HouseholdMembershipService {
     }
 
     const currentHousehold = this.appState.householdById(activeUser.householdId);
+    if (currentHousehold) {
+      return 'You are already part of a household. Leave your current household before joining another one.';
+    }
+
     const code = rawCode.toUpperCase().trim();
+    if (!code) {
+      return 'Invite code is invalid.';
+    }
+
     const targetHousehold = await this.findHouseholdByInviteCode(code);
 
     if (!targetHousehold) {
       return 'Invite code is invalid.';
     }
 
-    if (currentHousehold && targetHousehold.id === currentHousehold.id) {
-      return 'You are already in this household.';
+    if (this.isInviteCodeExpired(targetHousehold)) {
+      return 'Invite code has expired. Ask the household owner to regenerate a new code.';
     }
 
     if (targetHousehold.members.some((member) => member.userId === activeUser.id)) {
@@ -37,7 +45,7 @@ export class HouseholdMembershipService {
       return `Joined ${targetHousehold.name}.`;
     }
 
-    this.joinHousehold(activeUser.id, currentHousehold?.id, targetHousehold, activeUser.name);
+    this.joinHousehold(activeUser.id, undefined, targetHousehold, activeUser.name);
     return `Joined ${targetHousehold.name}.`;
   }
 
@@ -89,6 +97,15 @@ export class HouseholdMembershipService {
 
     const docSnap = snapshot.docs[0];
     return { id: docSnap.id, ...(docSnap.data() as Omit<Household, 'id'>) };
+  }
+
+  private isInviteCodeExpired(household: Household): boolean {
+    if (!household.inviteCodeExpiresAt) {
+      return false;
+    }
+
+    const expiresAt = new Date(household.inviteCodeExpiresAt).getTime();
+    return Number.isFinite(expiresAt) && expiresAt < Date.now();
   }
 
   private joinHousehold(userId: string, fromHouseholdId: string | undefined, targetHousehold: Household, name: string): void {

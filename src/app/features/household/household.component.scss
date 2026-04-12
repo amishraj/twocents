@@ -24,15 +24,19 @@
 .links {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.links a {
+.links a,
+.links button {
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   padding: 0.45rem 0.8rem;
   text-decoration: none;
   color: var(--text-strong);
   font-weight: 600;
+  background: transparent;
+  cursor: pointer;
 }
 
 .card {
@@ -40,6 +44,10 @@
   border-radius: 18px;
   padding: 1.1rem;
   box-shadow: var(--shadow-soft);
+}
+
+.name-prompt-card {
+  border: 1px solid var(--accent-soft);
 }
 
 .hero {
@@ -82,6 +90,10 @@
 .meta {
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.hero .meta {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .member-grid,
@@ -196,9 +208,63 @@ button {
   font-weight: 700;
 }
 
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .leave-btn {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.join-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 30;
+}
+
+.join-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(520px, calc(100vw - 2rem));
+  transform: translate(-50%, -50%);
+  background: var(--surface-elevated);
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: var(--shadow-strong);
+  z-index: 40;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.join-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.join-modal-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.close-btn {
+  background: transparent;
+  color: var(--text-strong);
+  border: 1px solid var(--border-subtle);
+  padding: 0.3rem 0.55rem;
+}
+
+.blocked-message {
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
 }
 
 @media (min-width: 960px) {

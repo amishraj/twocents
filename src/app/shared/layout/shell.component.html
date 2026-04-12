@@ -54,8 +54,11 @@
   </header>
 
   <nav class="desktop-nav">
-    @for (item of navItems; track item.route) {
+    @for (item of visibleNavItems(); track item.route) {
       <button class="nav-link" type="button" [routerLink]="item.route" routerLinkActive="active">{{ item.label }}</button>
+    }
+    @if (showAdminNav()) {
+      <button class="nav-link" type="button" routerLink="/admin" routerLinkActive="active">Admin</button>
     }
   </nav>
 
@@ -73,7 +76,7 @@
       </button>
     </div>
     <nav class="sidenav-links">
-      @for (item of navItems; track item.route) {
+      @for (item of visibleNavItems(); track item.route) {
         <button
           class="sidenav-link"
           type="button"
@@ -82,6 +85,17 @@
           (click)="closeSidenav()"
         >
           {{ item.label }}
+        </button>
+      }
+      @if (showAdminNav()) {
+        <button
+          class="sidenav-link"
+          type="button"
+          routerLink="/admin"
+          routerLinkActive="active"
+          (click)="closeSidenav()"
+        >
+          Admin
         </button>
       }
     </nav>

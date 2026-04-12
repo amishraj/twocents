@@ -8,7 +8,7 @@ import { HouseholdMembershipService } from '../../core/services/household-member
 import { InviteEmailService } from '../../core/services/invite-email.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
 import { ToastService } from '../../shared/toast/toast.service';
-import { createId, createInviteCode } from '../../core/utils/id';
+import { createId, createInviteCode, createInviteExpiry } from '../../core/utils/id';
 
 @Component({
   selector: 'app-profile',
@@ -29,12 +29,26 @@ export class ProfileComponent {
 
   householdMessage = '';
   confirmLeave = signal(false);
+  confirmReset = signal(false);
+
+  isAdmin = computed(() => this.user()?.email === 'amish197@gmail.com');
+
+  needsHouseholdName = computed(() => {
+    const h = this.household();
+    return h && (!h.name || h.name.trim().length === 0);
+  });
+
+  householdNameForm = this.fb.group({
+    name: ['', Validators.required]
+  });
 
   user = computed(() => this.auth.getActiveUser());
   household = computed(() => {
     const activeUser = this.user();
     return activeUser ? this.appState.householdById(activeUser.householdId) : undefined;
   });
+
+  hasHousehold = computed(() => Boolean(this.user()?.householdId?.trim()));
 
   canShowJoinByCode = computed(() => {
     const household = this.household();
@@ -206,7 +220,8 @@ export class ProfileComponent {
 
     const next = {
       ...household,
-      inviteCode: createInviteCode()
+      inviteCode: createInviteCode(),
+      inviteCodeExpiresAt: createInviteExpiry(1)
     };
 
     this.appState.updateHouseholds(
@@ -277,6 +292,40 @@ export class ProfileComponent {
 
     this.appState.updateHouseholdChangeRequests(next);
     this.householdMessage = 'Request approved.';
+  }
+
+  saveHouseholdName(): void {
+    const household = this.household();
+    if (!household || this.householdNameForm.invalid) {
+      this.householdNameForm.markAllAsTouched();
+      return;
+    }
+
+    const name = (this.householdNameForm.value.name ?? '').trim();
+    if (!name) {
+      return;
+    }
+
+    const next = { ...household, name };
+    this.appState.updateHouseholds(
+      this.appState.households().map((item) => (item.id === next.id ? next : item))
+    );
+    this.toast.success('Household name saved.');
+    this.householdNameForm.reset();
+  }
+
+  requestReset(): void {
+    this.confirmReset.set(true);
+  }
+
+  cancelReset(): void {
+    this.confirmReset.set(false);
+  }
+
+  async executeReset(): Promise<void> {
+    this.confirmReset.set(false);
+    await this.appState.adminResetAllData();
+    this.toast.success('All data has been reset.');
   }
 
   private buildInviteLink(inviteCode: string): string {

@@ -15,22 +15,14 @@ import { createId } from '../../core/utils/id';
     <div class="modal">
       <div class="modal-head">
         <h3>New category</h3>
-        <button type="button" class="close-btn" (click)="cancel()">X</button>
+        <button type="button" class="close-btn" (click)="cancel()">
+          <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
       </div>
       <form [formGroup]="form" (ngSubmit)="submit()" class="modal-form">
         <div class="field">
           <label>Name</label>
           <input type="text" formControlName="name" placeholder="e.g. Groceries, Rent" />
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Color</label>
-            <input type="color" formControlName="color" />
-          </div>
-          <div class="field">
-            <label>Icon label</label>
-            <input type="text" formControlName="icon" placeholder="tag" />
-          </div>
         </div>
         <div class="field">
           <label>Default scope</label>
@@ -79,10 +71,14 @@ import { createId } from '../../core/utils/id';
     .close-btn {
       border: none;
       background: var(--surface-strong);
+      color: var(--text-strong);
       width: 36px;
       height: 36px;
       border-radius: 12px;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .modal-form {
@@ -109,12 +105,6 @@ import { createId } from '../../core/utils/id';
       background: var(--surface);
       color: var(--text-strong);
       font-size: 0.95rem;
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
     }
 
     .actions {
@@ -158,18 +148,26 @@ export class CategoryModalComponent {
   private readonly appState = inject(AppStateService);
   private readonly toast = inject(ToastService);
 
+  private readonly colorPalette = [
+    '#0ea5e9', '#10b981', '#f97316', '#8b5cf6',
+    '#ef4444', '#f59e0b', '#06b6d4', '#ec4899',
+    '#84cc16', '#6366f1'
+  ];
+
   @Output() closed = new EventEmitter<void>();
   @Output() created = new EventEmitter<string>(); // emits new category ID
 
   form = this.fb.group({
     name: ['', Validators.required],
-    color: ['#0ea5e9', Validators.required],
-    icon: ['tag', Validators.required],
     defaultScope: ['shared', Validators.required]
   });
 
   cancel(): void {
     this.closed.emit();
+  }
+
+  private randomColor(): string {
+    return this.colorPalette[Math.floor(Math.random() * this.colorPalette.length)];
   }
 
   submit(): void {
@@ -184,8 +182,8 @@ export class CategoryModalComponent {
     this.appState.addCategory({
       id,
       name: value.name ?? 'New category',
-      color: value.color ?? '#0ea5e9',
-      icon: value.icon ?? 'tag',
+      color: this.randomColor(),
+      icon: 'tag',
       defaultScope: (value.defaultScope ?? 'shared') as Scope
     });
 

@@ -25,6 +25,7 @@ export class QuickAddExpenseComponent {
 
   categories = computed(() => this.appState.categories());
   activeUser = computed(() => this.auth.getActiveUser());
+  hasHousehold = computed(() => Boolean(this.activeUser()?.householdId?.trim()));
   showCategoryModal = signal(false);
 
   form = this.fb.group({
@@ -41,7 +42,8 @@ export class QuickAddExpenseComponent {
     const activeUser = this.auth.getActiveUser();
     if (activeUser) {
       this.form.patchValue({
-        paidByUserId: activeUser.id
+        paidByUserId: activeUser.id,
+        scope: activeUser.householdId ? 'shared' : 'personal'
       });
     }
 
@@ -86,6 +88,12 @@ export class QuickAddExpenseComponent {
     }
 
     const value = this.form.getRawValue();
+    const selectedScope = (value.scope ?? 'shared') as Scope;
+    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
+    if (selectedScope === 'shared' && resolvedScope === 'personal') {
+      this.toast.info('Shared expenses are locked until you join or create a household. Saved as personal.');
+    }
+
     const dateValue = value.date ?? new Date().toISOString().slice(0, 10);
     const isoDate = new Date(`${dateValue}T12:00:00`).toISOString();
 
@@ -102,7 +110,7 @@ export class QuickAddExpenseComponent {
       categoryId: value.categoryId ?? '',
       paidByUserId: value.paidByUserId ?? '',
       date: isoDate,
-      scope: (value.scope ?? 'shared') as Scope,
+      scope: resolvedScope,
       recurring: Boolean(value.recurring),
       recurringTemplateId,
       recurringKey
@@ -116,7 +124,7 @@ export class QuickAddExpenseComponent {
         categoryId: value.categoryId ?? '',
         paidByUserId: value.paidByUserId ?? '',
         dayOfMonth: dueDate.getDate(),
-        scope: (value.scope ?? 'shared') as Scope,
+        scope: resolvedScope,
         startDate: isoDate,
         active: true
       };
@@ -132,7 +140,7 @@ export class QuickAddExpenseComponent {
       categoryId: this.categories()[0]?.id ?? '',
       paidByUserId: this.activeUser()?.id ?? '',
       date: new Date().toISOString().slice(0, 10),
-      scope: 'shared',
+      scope: this.hasHousehold() ? 'shared' : 'personal',
       recurring: false
     });
 

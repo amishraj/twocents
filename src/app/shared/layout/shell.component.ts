@@ -27,6 +27,8 @@ export class ShellComponent {
   readonly colorPickerOpen = signal(false);
   readonly themeColors = ['#0284c7', '#0f766e', '#059669', '#b45309', '#dc2626', '#7c3aed'];
   readonly activeThemeColor = computed(() => this.auth.getActiveUser()?.preferences.themeColor ?? '#0284c7');
+  readonly showAdminNav = computed(() => this.auth.isAdminUser());
+  readonly hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
 
   readonly pendingInvite = computed(() => {
     const code = this.inviteFlow.pendingInviteCode();
@@ -53,6 +55,10 @@ export class ShellComponent {
     { label: 'Investments', route: '/investments', icon: 'stock' },
     { label: 'Profile', route: '/profile', icon: 'user' }
   ];
+
+  readonly visibleNavItems = computed(() =>
+    this.navItems.filter((item) => item.route !== '/household' || this.hasHousehold())
+  );
 
   constructor(public auth: AuthService, public ui: UiStateService) {
     this.route.queryParamMap.subscribe((params) => {

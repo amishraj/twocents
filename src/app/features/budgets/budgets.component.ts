@@ -24,6 +24,7 @@ export class BudgetsComponent {
 
   categories = computed(() => this.appState.categories());
   activeUser = computed(() => this.auth.getActiveUser());
+  hasHousehold = computed(() => Boolean(this.activeUser()?.householdId?.trim()));
   householdName = computed(() => {
     const user = this.activeUser();
     if (!user) {
@@ -134,12 +135,18 @@ export class BudgetsComponent {
     }
 
     const value = this.budgetForm.getRawValue();
+    const selectedScope = (value.scope ?? 'shared') as Scope;
+    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
+    if (selectedScope === 'shared' && resolvedScope === 'personal') {
+      this.toast.info('Shared budgets are locked until you join or create a household. Saved as personal.');
+    }
+
     this.appState.addBudget({
       id: createId(),
       categoryId: value.categoryId ?? '',
       limit: Number(value.limit),
       period: (value.period ?? 'monthly') as 'weekly' | 'monthly',
-      scope: (value.scope ?? 'shared') as Scope,
+      scope: resolvedScope,
       ownerId: activeUser.id,
       householdId: activeUser.householdId
     });
@@ -150,7 +157,7 @@ export class BudgetsComponent {
       categoryId: this.categories()[0]?.id ?? '',
       limit: null,
       period: 'monthly',
-      scope: 'shared'
+      scope: this.hasHousehold() ? 'shared' : 'personal'
     });
 
     this.showBudgetForm = false;

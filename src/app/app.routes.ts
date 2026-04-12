@@ -1,5 +1,7 @@
 import { Routes } from '@angular/router';
+import { adminGuard } from './core/guards/admin.guard';
 import { authGuard } from './core/guards/auth.guard';
+import { householdGuard } from './core/guards/household.guard';
 import { onboardingGuard } from './core/guards/onboarding.guard';
 import { unauthGuard } from './core/guards/unauth.guard';
 
@@ -42,6 +44,7 @@ export const routes: Routes = [
       },
       {
         path: 'household',
+        canActivate: [householdGuard],
         loadComponent: () =>
           import('./features/household/household.component').then((m) => m.HouseholdComponent)
       },
@@ -53,6 +56,11 @@ export const routes: Routes = [
       {
         path: 'profile',
         loadComponent: () => import('./features/profile/profile.component').then((m) => m.ProfileComponent)
+      },
+      {
+        path: 'admin',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./features/admin/admin.component').then((m) => m.AdminComponent)
       },
       {
         path: '',

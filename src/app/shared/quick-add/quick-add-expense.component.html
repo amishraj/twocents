@@ -50,9 +50,14 @@
         <div class="field">
           <label>Scope</label>
           <select formControlName="scope">
-            <option value="shared">Shared</option>
+            @if (hasHousehold()) {
+              <option value="shared">Shared</option>
+            }
             <option value="personal">Personal</option>
           </select>
+          @if (!hasHousehold()) {
+            <p>Shared scope unlocks after you join or create a household.</p>
+          }
         </div>
         <div class="field checkbox">
           <label>

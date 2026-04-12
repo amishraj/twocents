@@ -1,0 +1,53 @@
+.page {
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: var(--surface-elevated);
+  border-radius: 20px;
+  padding: 1.25rem;
+  border: 1px solid #fecaca;
+  box-shadow: var(--shadow-soft);
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+p {
+  color: var(--text-muted);
+}
+
+.danger {
+  border: none;
+  background: #b91c1c;
+  color: #ffffff;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.danger-outline {
+  background: transparent;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.danger:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.notice {
+  margin: 0.8rem 0 0;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem;
+  font-weight: 600;
+}

@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../shared/toast/toast.service';
 import { Scope } from '../../core/models/app.models';
 import { createId } from '../../core/utils/id';
@@ -16,9 +17,11 @@ import { createId } from '../../core/utils/id';
 export class SavingsComponent {
   private readonly fb = inject(FormBuilder);
   public appState = inject(AppStateService);
+  private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
   contributionInput = signal<Record<string, number>>({});
   savingsGoals = computed(() => this.appState.savingsGoals());
+  hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
 
   showForm = false;
 
@@ -42,13 +45,19 @@ export class SavingsComponent {
     }
 
     const value = this.form.getRawValue();
+    const selectedScope = (value.scope ?? 'shared') as Scope;
+    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
+    if (selectedScope === 'shared' && resolvedScope === 'personal') {
+      this.toast.info('Shared savings goals are locked until you join or create a household. Saved as personal.');
+    }
+
     this.appState.addSavingsGoal({
       id: createId(),
       name: value.name ?? 'Goal',
       targetAmount: Number(value.targetAmount),
       currentAmount: Number(value.currentAmount),
       accountName: value.accountName ?? 'Savings',
-      scope: (value.scope ?? 'shared') as Scope
+      scope: resolvedScope
     });
 
     this.toast.success(`Savings goal "${value.name}" created.`);
@@ -58,7 +67,7 @@ export class SavingsComponent {
       targetAmount: null,
       currentAmount: 0,
       accountName: '',
-      scope: 'shared'
+      scope: this.hasHousehold() ? 'shared' : 'personal'
     });
     this.showForm = false;
   }

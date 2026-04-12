@@ -7,8 +7,22 @@
     <div class="links">
       <a routerLink="/budgets">Manage budgets</a>
       <a routerLink="/savings">Manage savings</a>
+      <button type="button" (click)="openJoinModal()">Join household</button>
     </div>
   </div>
+
+  @if (needsHouseholdName()) {
+    <section class="card name-prompt-card">
+      <div class="section-head">
+        <h3>Name your household</h3>
+        <span>Members can recognize and trust invite links faster.</span>
+      </div>
+      <form class="join-form" [formGroup]="householdNameForm" (ngSubmit)="saveHouseholdName()">
+        <input type="text" formControlName="name" placeholder="e.g. The Raj Home" />
+        <button type="submit">Save name</button>
+      </form>
+    </section>
+  }
 
   <section class="card hero">
     <div>
@@ -33,22 +47,6 @@
       } @else {
         <button type="button" class="leave-btn" (click)="requestLeave()">Leave household now</button>
       }
-      @if (joinMessage) {
-        <p class="meta">{{ joinMessage }}</p>
-      }
-    </section>
-  }
-
-  @if (showJoinCard()) {
-    <section class="card">
-      <div class="section-head">
-        <h3>Join household</h3>
-        <span>Use an invite code from a teammate</span>
-      </div>
-      <form class="join-form" [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
-        <input type="text" formControlName="code" placeholder="ABC123" />
-        <button type="submit">Join household</button>
-      </form>
       @if (joinMessage) {
         <p class="meta">{{ joinMessage }}</p>
       }
@@ -156,4 +154,28 @@
       }
     </div>
   </section>
+
+  @if (joinModalOpen()) {
+    <button class="join-modal-backdrop" type="button" (click)="closeJoinModal()" aria-label="Close join household modal"></button>
+    <section class="join-modal" role="dialog" aria-modal="true" aria-label="Join household">
+      <div class="join-modal-head">
+        <h3>Join household</h3>
+        <button type="button" class="close-btn" (click)="closeJoinModal()" aria-label="Close">✕</button>
+      </div>
+      <p class="meta">Enter an invite code from a household owner or manager.</p>
+
+      <form class="join-form" [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
+        <input type="text" formControlName="code" placeholder="ABC123" [disabled]="!canAttemptJoin()" />
+        <button type="submit" [disabled]="!canAttemptJoin()">Join</button>
+      </form>
+
+      @if (!canAttemptJoin()) {
+        <p class="meta blocked-message">{{ joinDisabledReason() }}</p>
+      }
+
+      @if (joinMessage) {
+        <p class="meta">{{ joinMessage }}</p>
+      }
+    </section>
+  }
 </div>

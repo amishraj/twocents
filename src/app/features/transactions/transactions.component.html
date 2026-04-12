@@ -10,7 +10,9 @@
     <input type="search" placeholder="Search transactions" formControlName="query" />
     <select formControlName="scope">
       <option value="all">All</option>
-      <option value="shared">Shared</option>
+      @if (hasHousehold()) {
+        <option value="shared">Shared</option>
+      }
       <option value="personal">Personal</option>
     </select>
   </form>
@@ -81,7 +83,9 @@
           <div class="field">
             <label>Scope</label>
             <select formControlName="scope">
-              <option value="shared">Shared</option>
+              @if (hasHousehold()) {
+                <option value="shared">Shared</option>
+              }
               <option value="personal">Personal</option>
             </select>
           </div>

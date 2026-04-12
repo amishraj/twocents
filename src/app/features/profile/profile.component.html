@@ -7,6 +7,26 @@
     <a routerLink="/investments" class="ghost-link">Go to investments</a>
   </div>
 
+  @if (isAdmin()) {
+    <section class="card admin-zone">
+      <div class="admin-head">
+        <div>
+          <h2>Admin — Reset data</h2>
+          <p class="meta">Only visible to you. Wipes all transactions, budgets, categories, savings, investments and recurring templates across the project.</p>
+        </div>
+      </div>
+      @if (confirmReset()) {
+        <div class="confirm-row">
+          <span>This cannot be undone. Are you absolutely sure?</span>
+          <button type="button" class="ghost" (click)="cancelReset()">Cancel</button>
+          <button type="button" class="danger-btn" (click)="executeReset()">Yes, wipe everything</button>
+        </div>
+      } @else {
+        <button type="button" class="danger-btn" (click)="requestReset()">Reset all data</button>
+      }
+    </section>
+  }
+
   <div class="grid">
     <section class="card">
       <h2>Profile</h2>
@@ -14,6 +34,11 @@
         <div class="field">
           <label>Name</label>
           <input type="text" formControlName="name" />
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" [value]="user()?.email ?? ''" disabled class="disabled-input" />
+          <p class="field-help">Email changes coming soon.</p>
         </div>
         <div class="field">
           <label>Monthly income</label>
@@ -25,87 +50,95 @@
 
     <section class="card">
       <h2>Household</h2>
-      <p class="meta">{{ household()?.name }} - {{ household()?.type }}</p>
 
-      <div class="member-list">
-        @for (member of household()?.members ?? []; track member.userId) {
-          <div class="member-row">
-            <span>{{ member.displayName }}</span>
-            <span class="chip">{{ member.role }}</span>
-          </div>
-        }
-      </div>
-
-      <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()" class="form invite-form">
-        <div class="field">
-          <label>Invite by email</label>
-          <input type="email" formControlName="email" placeholder="partner@email.com" />
-          <p class="field-help">We send this email through EmailJS with your invite link and code.</p>
+      @if (!hasHousehold()) {
+        <div class="locked-household">
+          <p class="meta">Household features are locked while you are in personal-only mode.</p>
+          <a routerLink="/onboarding" class="ghost-link">Create or join a household</a>
         </div>
-        <button class="primary" type="submit">Send invite</button>
-      </form>
-
-      <div class="code-box">
-        <div>
-          <p class="meta">Invite code</p>
-          <div class="code">{{ household()?.inviteCode || '------' }}</div>
-        </div>
-        <div class="code-actions">
-          <button class="ghost-link" type="button" (click)="copyInviteLink()">Copy link</button>
-          <button class="ghost-link" type="button" (click)="regenerateInviteCode()">Regenerate</button>
-        </div>
-      </div>
-
-      @if (canShowJoinByCode()) {
-        <form [formGroup]="codeJoinForm" (ngSubmit)="requestJoinByCode()" class="form invite-form">
-          <div class="field">
-            <label>Join household by code</label>
-            <input type="text" formControlName="code" placeholder="ABC123" />
-          </div>
-          <button class="primary" type="submit">Join household</button>
-        </form>
-      }
-
-      @if (canLeaveHousehold()) {
-        @if (confirmLeave()) {
-          <div class="confirm-row">
-            <span>Are you sure? You will lose access to shared data.</span>
-            <button type="button" class="ghost" (click)="cancelLeave()">Cancel</button>
-            <button class="danger-btn" type="button" (click)="leaveHousehold()">Yes, leave</button>
+      } @else {
+        @if (needsHouseholdName()) {
+          <div class="name-prompt">
+            <p class="name-prompt-msg">Your household doesn't have a name yet. Add one so members can identify it.</p>
+            <form [formGroup]="householdNameForm" (ngSubmit)="saveHouseholdName()" class="name-form">
+              <input type="text" formControlName="name" placeholder="e.g. The Raj Home" />
+              <button class="primary" type="submit">Save name</button>
+            </form>
           </div>
         } @else {
-          <button class="danger-btn" type="button" (click)="requestLeave()">Leave household</button>
+          <p class="meta">{{ household()?.name }} - {{ household()?.type }}</p>
         }
-      }
 
-      @if (householdMessage) {
-        <p class="notice">{{ householdMessage }}</p>
-      }
+        <div class="member-list">
+          @for (member of household()?.members ?? []; track member.userId) {
+            <div class="member-row">
+              <span>{{ member.displayName }}</span>
+              <span class="chip">{{ member.role }}</span>
+            </div>
+          }
+        </div>
 
-      <div class="invite-list">
-        @for (invite of invitesForHousehold(); track invite.id) {
-          <div class="invite-row">
-            <span>{{ invite.email }}</span>
-            <div class="invite-actions">
-              <span class="chip pending">{{ invite.status }}</span>
-              @if (invite.status === 'pending') {
-                <button type="button" class="cancel-btn" (click)="cancelInvite(invite.id)">Cancel</button>
+        <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()" class="form invite-form">
+          <div class="field">
+            <label>Invite by email</label>
+            <input type="email" formControlName="email" placeholder="partner@email.com" />
+            <p class="field-help">We send this email through EmailJS with your invite link and code.</p>
+          </div>
+          <button class="primary" type="submit">Send invite</button>
+        </form>
+
+        <div class="code-box">
+          <div>
+            <p class="meta">Invite code</p>
+            <div class="code">{{ household()?.inviteCode || '------' }}</div>
+          </div>
+          <div class="code-actions">
+            <button class="ghost-link" type="button" (click)="copyInviteLink()">Copy link</button>
+            <button class="ghost-link" type="button" (click)="regenerateInviteCode()">Regenerate</button>
+          </div>
+        </div>
+
+        @if (canLeaveHousehold()) {
+          @if (confirmLeave()) {
+            <div class="confirm-row">
+              <span>Are you sure? You will lose access to shared data.</span>
+              <button type="button" class="ghost" (click)="cancelLeave()">Cancel</button>
+              <button class="danger-btn" type="button" (click)="leaveHousehold()">Yes, leave</button>
+            </div>
+          } @else {
+            <button class="danger-btn" type="button" (click)="requestLeave()">Leave household</button>
+          }
+        }
+
+        @if (householdMessage) {
+          <p class="notice">{{ householdMessage }}</p>
+        }
+
+        <div class="invite-list">
+          @for (invite of invitesForHousehold(); track invite.id) {
+            <div class="invite-row">
+              <span>{{ invite.email }}</span>
+              <div class="invite-actions">
+                <span class="chip pending">{{ invite.status }}</span>
+                @if (invite.status === 'pending') {
+                  <button type="button" class="cancel-btn" (click)="cancelInvite(invite.id)">Cancel</button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="invite-list">
+          @for (request of requestsForCurrentHousehold(); track request.id) {
+            <div class="invite-row">
+              <span>Move request - {{ request.status }}</span>
+              @if (request.status === 'pending' && request.userId !== user()?.id) {
+                <button type="button" class="approve-btn" (click)="approveRequest(request.id)">Approve</button>
               }
             </div>
-          </div>
-        }
-      </div>
-
-      <div class="invite-list">
-        @for (request of requestsForCurrentHousehold(); track request.id) {
-          <div class="invite-row">
-            <span>Move request - {{ request.status }}</span>
-            @if (request.status === 'pending' && request.userId !== user()?.id) {
-              <button type="button" class="approve-btn" (click)="approveRequest(request.id)">Approve</button>
-            }
-          </div>
-        }
-      </div>
+          }
+        </div>
+      }
     </section>
   </div>
 </div>

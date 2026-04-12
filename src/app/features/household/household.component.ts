@@ -25,10 +25,15 @@ export class HouseholdComponent {
 
   contributionInput = signal<Record<string, number>>({});
   confirmLeave = signal(false);
+  joinModalOpen = signal(false);
   joinMessage = '';
 
   joinForm = this.fb.group({
     code: ['', [Validators.required, Validators.minLength(6)]]
+  });
+
+  householdNameForm = this.fb.group({
+    name: ['', Validators.required]
   });
 
   activeUser = computed(() => this.auth.getActiveUser());
@@ -38,8 +43,17 @@ export class HouseholdComponent {
     return user ? this.appState.householdById(user.householdId) : undefined;
   });
 
-  showJoinCard = computed(() => {
-    return !this.household();
+  canAttemptJoin = computed(() => !this.household());
+
+  joinDisabledReason = computed(() =>
+    this.household()
+      ? 'You are already part of a household. Leave your current household before joining another one.'
+      : ''
+  );
+
+  needsHouseholdName = computed(() => {
+    const household = this.household();
+    return Boolean(household && (!household.name || household.name.trim().length === 0));
   });
 
   canLeaveHousehold = computed(() => {
@@ -165,8 +179,43 @@ export class HouseholdComponent {
     });
   }
 
+  openJoinModal(): void {
+    this.joinMessage = '';
+    this.joinModalOpen.set(true);
+  }
+
+  closeJoinModal(): void {
+    this.joinModalOpen.set(false);
+  }
+
+  saveHouseholdName(): void {
+    const household = this.household();
+    if (!household || this.householdNameForm.invalid) {
+      this.householdNameForm.markAllAsTouched();
+      return;
+    }
+
+    const name = (this.householdNameForm.value.name ?? '').trim();
+    if (!name) {
+      return;
+    }
+
+    const next = { ...household, name };
+    this.appState.updateHouseholds(
+      this.appState.households().map((item) => (item.id === next.id ? next : item))
+    );
+    this.householdNameForm.reset({ name: '' });
+    this.toast.success('Household name saved.');
+  }
+
   async joinHousehold(): Promise<void> {
     this.joinMessage = '';
+    if (!this.canAttemptJoin()) {
+      this.joinMessage = this.joinDisabledReason();
+      this.toast.warning(this.joinMessage);
+      return;
+    }
+
     if (this.joinForm.invalid) {
       this.joinForm.markAllAsTouched();
       this.toast.warning('Please enter a valid invite code.');
@@ -178,6 +227,7 @@ export class HouseholdComponent {
 
     if (this.joinMessage.startsWith('Joined ') || this.joinMessage === 'You are already in this household.') {
       this.inviteFlow.clearPendingInviteCode();
+      this.joinModalOpen.set(false);
     }
 
     this.joinForm.reset({ code: '' });

@@ -115,6 +115,11 @@ select {
   align-items: center;
 }
 
+.title .icon-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .title h3 {
   margin: 0;
 }
@@ -160,6 +165,29 @@ select {
 .empty {
   margin: 0;
   color: var(--text-muted);
+}
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-btn.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
 }
 
 @media (min-width: 900px) {

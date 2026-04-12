@@ -5,6 +5,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { Scope } from '../../core/models/app.models';
 import { AppStateService } from '../../core/services/app-state.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../shared/toast/toast.service';
 import { CategoryModalComponent } from '../../shared/category-modal/category-modal.component';
 
@@ -19,6 +20,7 @@ export class TransactionsComponent {
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   public appState = inject(AppStateService);
+  private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
   editingId = signal<string | null>(null);
   confirmDeleteId = signal<string | null>(null);
@@ -40,6 +42,8 @@ export class TransactionsComponent {
   private readonly filterValue = toSignal(this.filterForm.valueChanges, {
     initialValue: this.filterForm.getRawValue()
   });
+
+  hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
 
   filteredTransactions = computed(() => {
     const filter = this.filterValue();
@@ -109,6 +113,12 @@ export class TransactionsComponent {
     }
 
     const value = this.editForm.getRawValue();
+    const selectedScope = (value.scope ?? 'shared') as Scope;
+    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
+    if (selectedScope === 'shared' && resolvedScope === 'personal') {
+      this.toast.info('Shared transactions are locked until you join or create a household. Saved as personal.');
+    }
+
     const next = this.appState.transactions().map((transaction) => {
       if (transaction.id !== this.editingId()) {
         return transaction;
@@ -119,9 +129,9 @@ export class TransactionsComponent {
         title: value.title ?? transaction.title,
         amount: Number(value.amount),
         categoryId: value.categoryId ?? transaction.categoryId,
-        scope: (value.scope ?? transaction.scope) as Scope,
-        date: new Date(`${value.date ?? transaction.date.slice(0, 10)}T12:00:00`).toISOString()
-      };
+          scope: resolvedScope,
+          date: new Date(`${value.date ?? transaction.date.slice(0, 10)}T12:00:00`).toISOString()
+        };
     });
 
     this.appState.updateTransactions(next);

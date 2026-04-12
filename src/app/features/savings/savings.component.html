@@ -31,9 +31,14 @@
         <div class="field">
           <label>Scope</label>
           <select formControlName="scope">
-            <option value="shared">Shared</option>
+            @if (hasHousehold()) {
+              <option value="shared">Shared</option>
+            }
             <option value="personal">Personal</option>
           </select>
+          @if (!hasHousehold()) {
+            <small>Shared savings unlock after joining or creating a household.</small>
+          }
         </div>
       </div>
       <button class="primary" type="submit">Save goal</button>

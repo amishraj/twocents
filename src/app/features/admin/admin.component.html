@@ -1,0 +1,20 @@
+<div class="page">
+  <section class="card">
+    <h1>Admin Reset</h1>
+    <p>
+      Owner-only tool. This clears all budgeting data and keeps your user account.
+    </p>
+
+    <button type="button" class="danger" (click)="resetAllData()" [disabled]="resetInFlight">
+      {{ resetInFlight ? 'Resetting...' : 'Reset all data (keep my user)' }}
+    </button>
+
+    <button type="button" class="danger danger-outline" (click)="nukeEverything()" [disabled]="nukeInFlight">
+      {{ nukeInFlight ? 'Nuking...' : 'Nuke all data + delete my account' }}
+    </button>
+
+    @if (message) {
+      <p class="notice">{{ message }}</p>
+    }
+  </section>
+</div>

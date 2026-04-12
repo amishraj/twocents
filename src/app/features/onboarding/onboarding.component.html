@@ -1,49 +1,105 @@
 <div class="onboarding">
   <div class="card">
-    <h1>Set up your household</h1>
-    <p>Tell us a little about how you want to track money together.</p>
+    @if (step() === 'choice') {
+      <h1>Welcome to TwoCents</h1>
+      <p>How do you want to start?</p>
+      <div class="choice-actions">
+        <button class="primary" type="button" (click)="chooseCreate()">Create household</button>
+        <button class="primary" type="button" (click)="chooseJoin()">Join household</button>
+        <button class="ghost" type="button" (click)="skipForNow()">Skip for now (personal only)</button>
+      </div>
+    }
 
-    <form [formGroup]="form" (ngSubmit)="submit()">
-      <div class="field">
-        <label>Household name</label>
-        <input type="text" formControlName="householdName" placeholder="Avery + Jordan" />
-      </div>
-      <div class="grid">
+    @if (step() === 'create') {
+      <h1>Create your household</h1>
+      <p>Set up shared finances now, invite others in the next step.</p>
+
+      <form [formGroup]="createForm" (ngSubmit)="createHousehold()">
         <div class="field">
-          <label>Type</label>
-          <select formControlName="householdType">
-            <option value="couple">Couple</option>
-            <option value="solo">Solo</option>
-          </select>
+          <label>Household name</label>
+          <input type="text" formControlName="householdName" placeholder="e.g. The Raj Home" />
         </div>
-        <div class="field">
-          <label>Currency</label>
-          <select formControlName="currency">
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="INR">INR</option>
-            <option value="GBP">GBP</option>
-            <option value="CAD">CAD</option>
-          </select>
+        <div class="grid">
+          <div class="field">
+            <label>Type</label>
+            <select formControlName="householdType">
+              <option value="couple">Couple</option>
+              <option value="solo">Solo</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Currency</label>
+            <select formControlName="currency">
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="INR">INR</option>
+              <option value="GBP">GBP</option>
+              <option value="CAD">CAD</option>
+            </select>
+          </div>
         </div>
-      </div>
-      <div class="grid">
         <div class="field">
           <label>Monthly income</label>
           <input type="number" formControlName="incomeMonthly" min="0" />
         </div>
-      </div>
-      <div class="field">
-        <label>Priority</label>
-        <select formControlName="focus">
-          <option value="clarity">Clarity on spending</option>
-          <option value="savings">Grow savings</option>
-          <option value="plan">Plan shared budgets</option>
-        </select>
+
+        <div class="row-actions">
+          <button class="ghost" type="button" (click)="backToChoice()">Back</button>
+          <button class="primary" type="submit">Create household</button>
+        </div>
+      </form>
+    }
+
+    @if (step() === 'join') {
+      <h1>Join a household</h1>
+      <p>Use an invite code from the household owner.</p>
+      <form [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
+        <div class="field">
+          <label>Invite code</label>
+          <input type="text" formControlName="code" placeholder="ABC123" />
+        </div>
+        <div class="field">
+          <label>Monthly income</label>
+          <input type="number" formControlName="incomeMonthly" min="0" />
+        </div>
+
+        <div class="row-actions">
+          <button class="ghost" type="button" (click)="backToChoice()">Back</button>
+          <button class="primary" type="submit">Join household</button>
+        </div>
+      </form>
+    }
+
+    @if (step() === 'invite') {
+      <h1>Invite your people</h1>
+      <p>Use email invite or share your code. Code stays valid for one hour.</p>
+
+      <div class="code-box">
+        <div>
+          <p class="kicker">Invite code</p>
+          <div class="code">{{ activeHousehold()?.inviteCode }}</div>
+          <p class="meta">Expires: {{ activeHousehold()?.inviteCodeExpiresAt | date: 'short' }}</p>
+        </div>
+        <div class="code-actions">
+          <button class="ghost" type="button" (click)="copyInviteLink()">Copy link</button>
+          <button class="ghost" type="button" (click)="regenerateInviteCode()">Regenerate</button>
+        </div>
       </div>
 
-      <button class="primary" type="submit">Finish setup</button>
-      <button class="ghost" type="button" (click)="skip()">Skip for now</button>
-    </form>
+      <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()">
+        <div class="field">
+          <label>Invite by email</label>
+          <input type="email" formControlName="email" placeholder="partner@email.com" />
+        </div>
+        <div class="row-actions">
+          <button class="ghost" type="submit">Send invite</button>
+          <button class="primary" type="button" (click)="finish()">Continue to household</button>
+        </div>
+      </form>
+    }
+
+    @if (message) {
+      <p class="notice">{{ message }}</p>
+    }
   </div>
 </div>
