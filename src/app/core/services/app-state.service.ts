@@ -71,6 +71,10 @@ export class AppStateService {
   private personalFallbackTransactionsCache: Transaction[] = [];
   private watchedScopeKey: string | null = null;
   private recurringGenerationInFlight = false;
+  // Tracks recurring keys generated in this session but not yet confirmed by a
+  // Firestore snapshot. Prevents duplicate generation when onSnapshot fires with
+  // partial state before all async setDoc writes have been applied to the cache.
+  private readonly inflightRecurringKeys = new Set<string>();
 
   readonly users = computed(() => this.usersSignal());
   readonly households = computed(() => this.householdsSignal());
@@ -367,11 +371,16 @@ export class AppStateService {
 
     this.recurringGenerationInFlight = true;
     const templates = this.recurringTemplatesSignal().filter((template) => template.active);
-    const existingKeys = new Set(
-      this.transactionsSignal()
+    // Combine keys already confirmed in Firestore (via signal) with keys generated
+    // in this session but not yet confirmed (inflight). This prevents the race where
+    // onSnapshot overwrites the signal with partial data and triggers a second run
+    // that re-generates keys that were just written but haven't been read back yet.
+    const existingKeys = new Set([
+      ...this.transactionsSignal()
         .filter((transaction) => transaction.recurringKey)
-        .map((transaction) => transaction.recurringKey as string)
-    );
+        .map((transaction) => transaction.recurringKey as string),
+      ...this.inflightRecurringKeys
+    ]);
 
     const today = new Date();
     for (const template of templates) {
@@ -404,6 +413,7 @@ export class AppStateService {
             };
 
             existingKeys.add(recurringKey);
+            this.inflightRecurringKeys.add(recurringKey);
             this.addTransaction(transaction);
           }
         }
@@ -584,6 +594,10 @@ export class AppStateService {
       const next = snapshot.docs
         .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<Transaction, 'id'>) }) as Transaction)
         .filter((item) => !(item as { deleted?: boolean }).deleted);
+      // Any recurring key that Firestore has confirmed can leave the inflight set
+      for (const tx of next) {
+        if (tx.recurringKey) this.inflightRecurringKeys.delete(tx.recurringKey);
+      }
       this.transactionsSignal.set(next);
       this.storage.setItem(STORAGE_KEYS.transactions, next);
       void this.ensureRecurringUpToDate();
@@ -636,6 +650,10 @@ export class AppStateService {
       }
     }
 
+    // Any recurring key confirmed in either path can leave the inflight set
+    for (const tx of merged) {
+      if (tx.recurringKey) this.inflightRecurringKeys.delete(tx.recurringKey);
+    }
     this.transactionsSignal.set(merged);
     this.storage.setItem(STORAGE_KEYS.transactions, merged);
     void this.ensureRecurringUpToDate();
@@ -705,6 +723,7 @@ export class AppStateService {
     this.householdChangeRequestsSignal.set([]);
     this.recurringTemplatesSignal.set([]);
     this.additionalIncomeSignal.set([]);
+    this.inflightRecurringKeys.clear();
     this.storage.removeItem(STORAGE_KEYS.categories);
     this.storage.removeItem(STORAGE_KEYS.budgets);
     this.storage.removeItem(STORAGE_KEYS.transactions);
@@ -897,6 +916,7 @@ export class AppStateService {
   private cleanupWatchers(): void {
     this.cleanupHouseholdWatchers();
     this.watchedScopeKey = null;
+    this.inflightRecurringKeys.clear();
     this.usersSignal.set([]);
     this.householdsSignal.set([]);
     this.categoriesSignal.set([]);
