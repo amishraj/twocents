@@ -7,7 +7,36 @@
   </div>
 
   <form class="filters" [formGroup]="filterForm">
-    <input type="search" placeholder="Search transactions" formControlName="query" />
+    <div class="search-wrap">
+      @if (isNumericSearch()) {
+        <div class="compare-toggle">
+          <button type="button" class="compare-btn" [class.active]="numericCompare() === 'lt'" (click)="setNumericCompare('lt')" title="Less than">
+            <span>&lt;</span>
+          </button>
+          <button type="button" class="compare-btn" [class.active]="numericCompare() === 'eq'" (click)="setNumericCompare('eq')" title="Equal to">
+            <span>=</span>
+          </button>
+          <button type="button" class="compare-btn" [class.active]="numericCompare() === 'gt'" (click)="setNumericCompare('gt')" title="Greater than">
+            <span>&gt;</span>
+          </button>
+        </div>
+      }
+      <input type="search" placeholder="Search transactions" formControlName="query" [style.padding-left.px]="isNumericSearch() ? 96 : 14" />
+      <button
+        type="button"
+        class="filter-btn"
+        [class.active]="categoryFilter() || categoryFilterOpen()"
+        (click)="toggleCategoryFilter()"
+        aria-label="Filter by category"
+      >
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        @if (categoryFilter()) {
+          <span class="filter-badge">1</span>
+        }
+      </button>
+    </div>
     <select formControlName="scope">
       <option value="all">All</option>
       @if (hasHousehold()) {
@@ -17,31 +46,40 @@
     </select>
   </form>
 
+  @if (categoryFilterOpen()) {
+    <div class="filter-dropdown">
+      <div class="filter-dropdown-head">
+        <span>Filter by category</span>
+        @if (categoryFilter()) {
+          <button type="button" class="clear-filter" (click)="setCategoryFilter(null)">Clear</button>
+        }
+      </div>
+      <div class="filter-options">
+        @for (category of appState.categories(); track category.id) {
+          <button
+            type="button"
+            class="filter-option"
+            [class.selected]="categoryFilter() === category.id"
+            (click)="setCategoryFilter(category.id)"
+          >
+            <span class="cat-dot" [style.background]="category.color"></span>
+            {{ category.name }}
+          </button>
+        }
+      </div>
+    </div>
+  }
+
   <div class="card list">
     @for (transaction of filteredTransactions(); track transaction.id) {
-      <div class="row">
-        <div>
-          <div class="title">{{ transaction.title }}</div>
-          <div class="meta">
-            {{ appState.categoryById(transaction.categoryId)?.name || 'Category' }} -
-            {{ transaction.scope }}
-          </div>
-        </div>
-        <div class="row-actions">
-          <div class="amount">${{ transaction.amount | number: '1.2-2' }}</div>
-          @if (confirmDeleteId() === transaction.id) {
-            <button type="button" class="icon-btn" (click)="cancelDelete()" aria-label="Cancel delete">Cancel</button>
-            <button type="button" class="icon-btn danger" (click)="confirmDelete()" aria-label="Confirm delete">Delete?</button>
-          } @else {
-            <button type="button" class="icon-btn" (click)="startEdit(transaction.id)" aria-label="Edit transaction">
-              <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            </button>
-            <button type="button" class="icon-btn danger" (click)="requestDelete(transaction.id)" aria-label="Delete transaction">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            </button>
-          }
-        </div>
-      </div>
+      <app-tx-row
+        [transaction]="transaction"
+        [dateLeft]="true"
+        [showEditButton]="true"
+        [showDeleteButton]="true"
+        (edit)="startEdit($event)"
+        (delete)="requestDelete($event)"
+      />
     }
     @if (filteredTransactions().length === 0) {
       <p class="empty">No transactions match this filter yet.</p>
@@ -73,12 +111,17 @@
         <div class="split">
           <div class="field">
             <label>Category</label>
-            <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
-              @for (category of appState.categories(); track category.id) {
-                <option [value]="category.id">{{ category.name }}</option>
-              }
-              <option value="__new__">+ New category</option>
-            </select>
+            <div class="category-row">
+              <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
+                @for (category of appState.categories(); track category.id) {
+                  <option [value]="category.id">{{ category.name }}</option>
+                }
+                <option value="__new__">+ New category</option>
+              </select>
+              <button type="button" class="tiny-icon" (click)="openRenameCategory()" aria-label="Rename category">
+                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+            </div>
           </div>
           <div class="field">
             <label>Scope</label>
@@ -102,6 +145,31 @@
     <app-category-modal
       (created)="onCategoryCreated($event)"
       (closed)="closeCategoryModal()"
+    />
+  }
+
+  @if (showRenameCategoryModal()) {
+    <div class="overlay" (click)="closeRenameCategoryModal()"></div>
+    <div class="rename-modal">
+      <h3>Rename category</h3>
+      <form [formGroup]="renameCategoryForm" (ngSubmit)="saveCategoryRename()">
+        <input type="text" formControlName="name" placeholder="Category name" />
+        <div class="rename-actions">
+          <button type="button" class="ghost" (click)="closeRenameCategoryModal()">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </div>
+  }
+
+  @if (confirmDeleteId()) {
+    <app-confirm-modal
+      title="Delete transaction?"
+      message="This transaction will be permanently removed."
+      confirmLabel="Delete"
+      [danger]="true"
+      (cancel)="cancelDelete()"
+      (confirm)="confirmDelete()"
     />
   }
 </div>
