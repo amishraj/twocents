@@ -1,0 +1,27 @@
+.tx-label {
+  font-size: 0.63rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tx-recurring {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.tx-coming-up {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.tx-today {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}

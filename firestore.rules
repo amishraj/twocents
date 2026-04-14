@@ -9,6 +9,17 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function isHouseholdMemberOf(otherUid) {
+      return signedIn() && userDoc(request.auth.uid).data.householdId == userDoc(otherUid).data.householdId;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.email == 'amishu197@gmail.com' ||
+        userDoc(request.auth.uid).data.email == 'amishu197@gmail.com'
+      );
+    }
+
     function userDoc(uid) {
       return get(/databases/$(database)/documents/users/$(uid));
     }
@@ -30,12 +41,33 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read, create, update: if isSameUser(uid);
+      allow read: if isSameUser(uid) || isHouseholdMemberOf(uid);
+      allow create, update: if isSameUser(uid);
       allow delete: if false;
 
       match /transactions/{docId} {
         allow read, create, update, delete: if isSameUser(uid);
       }
+
+      match /bankConnections/{docId} {
+        allow read: if isSameUser(uid) || isAdmin();
+        allow create, update, delete: if isSameUser(uid) || isAdmin();
+      }
+
+      match /bankAccounts/{docId} {
+        allow read: if isSameUser(uid) || isAdmin();
+        allow create, update, delete: if isSameUser(uid) || isAdmin();
+      }
+
+      match /bankIssues/{docId} {
+        allow read: if isSameUser(uid) || isAdmin();
+        allow create, update, delete: if isSameUser(uid) || isAdmin();
+      }
+    }
+
+    match /adminFlags/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
     }
 
     match /households/{householdId} {

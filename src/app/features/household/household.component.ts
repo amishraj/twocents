@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, computed, effect, inject, signal, ViewChildren, QueryList, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -7,15 +7,31 @@ import { AuthService } from '../../core/services/auth.service';
 import { HouseholdMembershipService } from '../../core/services/household-membership.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
 import { ToastService } from '../../shared/toast/toast.service';
+import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
+import { TransactionRowComponent } from '../../shared/transaction-row/transaction-row.component';
+import {
+  Chart,
+  DoughnutController,
+  ArcElement,
+  Tooltip,
+  Legend
+} from 'chart.js';
+
+Chart.register(DoughnutController, ArcElement, Tooltip, Legend);
 
 @Component({
   selector: 'app-household',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, ConfirmModalComponent, TransactionRowComponent],
   templateUrl: './household.component.html',
   styleUrl: './household.component.scss'
 })
-export class HouseholdComponent {
+export class HouseholdComponent implements AfterViewInit, OnDestroy {
+  @ViewChildren('budgetGaugeCanvas') budgetGaugeRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
+  @ViewChild('incomeGaugeCanvas') incomeGaugeRef?: ElementRef<HTMLCanvasElement>;
+  private budgetCharts: Chart<'doughnut'>[] = [];
+  private incomeChart: Chart<'doughnut'> | null = null;
+
   private readonly fb = inject(FormBuilder);
   private readonly appState = inject(AppStateService);
   private readonly auth = inject(AuthService);
@@ -23,8 +39,47 @@ export class HouseholdComponent {
   private readonly inviteFlow = inject(InviteFlowService);
   private readonly toast = inject(ToastService);
 
+  constructor() {
+    effect(() => {
+      void this.incomeChartReady();
+      const pct = this.monthlySpendPercent();
+      const spent = this.monthlySharedSpend();
+      const income = this.monthlyHouseholdIncome();
+      if (this.incomeChart) {
+        this.incomeChart.data.datasets[0].data = [spent, Math.max(0, income - spent)];
+        const themeColor = this.auth.getActiveUser()?.preferences.themeColor ?? '#0284c7';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.incomeChart.data.datasets[0] as any).backgroundColor = [
+          this.getHealthColor(pct, themeColor),
+          '#e0f2fe'
+        ];
+        this.incomeChart.update('none');
+      }
+    });
+  }
+
   contributionInput = signal<Record<string, number>>({});
   confirmLeave = signal(false);
+  showIncomeForm = signal(false);
+  incomeSourceInput = signal('');
+  incomeAmountInput = signal<number | null>(null);
+  incomeChartReady = signal(0);
+
+  private readonly todayStr = new Date().toISOString().split('T')[0];
+  private readonly yesterdayStr = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  private mapTransaction(transaction: ReturnType<typeof this.appState.transactions>[0]) {
+    const memberLookup = new Map(this.members().map((m) => [m.userId, m.displayName]));
+    return {
+      ...transaction,
+      paidByName: memberLookup.get(transaction.paidByUserId) ?? 'Member',
+      categoryName: this.appState.categoryById(transaction.categoryId)?.name ?? 'Uncategorized'
+    };
+  }
   joinModalOpen = signal(false);
   joinMessage = '';
 
@@ -61,6 +116,18 @@ export class HouseholdComponent {
     return Boolean(household);
   });
 
+  leaveBlockedByConsent = computed(() => {
+    const household = this.household();
+    const user = this.activeUser();
+    if (!household || !user) {
+      return false;
+    }
+
+    const currentMember = household.members.find((member) => member.userId === user.id);
+    const hasOtherMembers = household.members.some((member) => member.userId !== user.id);
+    return currentMember?.role === 'owner' && hasOtherMembers;
+  });
+
   members = computed(() => {
     const household = this.household();
     if (!household) {
@@ -77,9 +144,26 @@ export class HouseholdComponent {
     });
   });
 
-  monthlyHouseholdIncome = computed(() =>
-    this.members().reduce((sum, member) => sum + member.incomeMonthly, 0)
-  );
+  monthlyHouseholdIncome = computed(() => {
+    const baseIncome = this.members().reduce((sum, member) => sum + member.incomeMonthly, 0);
+    const additionalIncome = this.totalAdditionalIncomeThisMonth();
+    return baseIncome + additionalIncome;
+  });
+
+  monthlySharedSpend = computed(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return this.appState
+      .transactions()
+      .filter((tx) => tx.scope === 'shared' && new Date(tx.date) >= monthStart)
+      .reduce((sum, tx) => sum + tx.amount, 0);
+  });
+
+  monthlySpendPercent = computed(() => {
+    const income = this.monthlyHouseholdIncome();
+    if (income <= 0) return 0;
+    return Math.min(100, Math.round((this.monthlySharedSpend() / income) * 100));
+  });
 
   memberContribution = computed(() => {
     const now = new Date();
@@ -103,6 +187,33 @@ export class HouseholdComponent {
             : 0
       };
     });
+  });
+
+  additionalIncomeEntries = computed(() => {
+    const household = this.household();
+    if (!household) return [];
+    return this.appState.additionalIncome()
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  });
+
+  allMembersAdditionalIncomeThisMonth = computed(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const allEntries = this.appState.additionalIncome().filter((e) => new Date(e.date) >= monthStart);
+    
+    return this.members().map((member) => {
+      const memberEntries = allEntries.filter((e) => e.userId === member.userId);
+      const memberTotal = memberEntries.reduce((sum, e) => sum + e.amount, 0);
+      return {
+        ...member,
+        additionalIncome: memberTotal,
+        entries: memberEntries
+      };
+    });
+  });
+
+  totalAdditionalIncomeThisMonth = computed(() => {
+    return this.allMembersAdditionalIncomeThisMonth().reduce((sum, m) => sum + m.additionalIncome, 0);
   });
 
   sharedBudgetSummaries = computed(() => {
@@ -141,19 +252,190 @@ export class HouseholdComponent {
     this.appState.savingsGoals().filter((goal) => goal.scope === 'shared')
   );
 
+  ngAfterViewInit(): void {
+    setTimeout(() => {
+      this.initIncomeChart();
+      this.incomeChartReady.update(v => v + 1);
+      this.initBudgetCharts();
+    }, 0);
+  }
+
+  ngOnDestroy(): void {
+    for (const chart of this.budgetCharts) {
+      chart.destroy();
+    }
+    this.budgetCharts = [];
+    this.incomeChart?.destroy();
+    this.incomeChart = null;
+  }
+
+  private initIncomeChart(): void {
+    const canvas = this.incomeGaugeRef?.nativeElement;
+    if (!canvas) return;
+
+    const themeColor = this.auth.getActiveUser()?.preferences.themeColor ?? '#0284c7';
+
+    this.incomeChart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Spent', 'Remaining'],
+        datasets: [{
+          data: [this.monthlySharedSpend(), Math.max(0, this.monthlyHouseholdIncome() - this.monthlySharedSpend())],
+          backgroundColor: [this.getHealthColor(this.monthlySpendPercent(), themeColor), '#e0f2fe'],
+          borderColor: '#ffffff',
+          borderWidth: 3,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        cutout: '70%',
+        responsive: true,
+        maintainAspectRatio: true,
+        animation: { animateRotate: true, animateScale: false, duration: 700 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false }
+        }
+      }
+    });
+  }
+
+  private initBudgetCharts(): void {
+    const canvases = this.budgetGaugeRefs?.toArray() ?? [];
+    const budgetData = this.sharedBudgetSummaries();
+
+    for (let i = 0; i < Math.min(canvases.length, budgetData.length); i++) {
+      const canvas = canvases[i].nativeElement;
+      const item = budgetData[i];
+
+      const chart = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          labels: [item.category?.name ?? 'Budget', 'Remaining'],
+          datasets: [
+            {
+              data: [item.percent, 100 - item.percent],
+              backgroundColor: [this.getHealthColor(item.percent, item.category?.color ?? '#0ea5e9'), '#f1f5f9'],
+              borderWidth: 0,
+              hoverOffset: 4
+            }
+          ]
+        },
+        options: {
+          cutout: '70%',
+          responsive: true,
+          maintainAspectRatio: true,
+          animation: { animateRotate: true, animateScale: false, duration: 600 },
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+          }
+        }
+      });
+
+      this.budgetCharts.push(chart);
+    }
+  }
+
+  getHealthColor(percent: number, categoryColor: string): string {
+    if (percent >= 100) return '#dc2626';
+    if (percent >= 85) return '#d97706';
+    return categoryColor;
+  }
+
+  sharedGoalProgress(goalId: string): number {
+    const goal = this.sharedSavingsGoals().find((item) => item.id === goalId);
+    if (!goal || goal.targetAmount <= 0) {
+      return 0;
+    }
+
+    return Math.min(100, (goal.currentAmount / goal.targetAmount) * 100);
+  }
+
+  sharedGoalProgressColor(goalId: string): string {
+    const progress = this.sharedGoalProgress(goalId);
+    const hue = Math.max(0, Math.min(120, Math.round((progress / 100) * 120)));
+    return `hsl(${hue} 78% 48%)`;
+  }
+
+  sharedGoalTone(goalId: string): 'danger' | 'warning' | 'success' {
+    const progress = this.sharedGoalProgress(goalId);
+    if (progress >= 80) {
+      return 'success';
+    }
+    if (progress >= 40) {
+      return 'warning';
+    }
+    return 'danger';
+  }
+
+  sharedGoalStatus(goalId: string): string {
+    const tone = this.sharedGoalTone(goalId);
+    if (tone === 'success') {
+      return 'Near goal';
+    }
+    if (tone === 'warning') {
+      return 'On track';
+    }
+    return 'Behind';
+  }
+
   recentHouseholdTransactions = computed(() => {
-    const memberLookup = new Map(this.members().map((member) => [member.userId, member.displayName]));
     return this.appState
       .transactions()
-      .filter((transaction) => transaction.scope === 'shared')
+      .filter((tx) => tx.scope === 'shared')
+      .filter((tx) => {
+        const d = tx.date.substring(0, 10);
+        return d === this.todayStr || d === this.yesterdayStr;
+      })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 8)
-      .map((transaction) => ({
-        ...transaction,
-        paidByName: memberLookup.get(transaction.paidByUserId) ?? 'Member',
-        categoryName: this.appState.categoryById(transaction.categoryId)?.name ?? 'Uncategorized'
-      }));
+      .map((tx) => this.mapTransaction(tx));
   });
+
+  upcomingHouseholdTransactions = computed(() => {
+    return this.appState
+      .transactions()
+      .filter((tx) => tx.scope === 'shared')
+      .filter((tx) => tx.date.substring(0, 10) > this.todayStr)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 8)
+      .map((tx) => this.mapTransaction(tx));
+  });
+
+  toggleIncomeForm(): void {
+    this.showIncomeForm.set(!this.showIncomeForm());
+  }
+
+  addAdditionalIncome(): void {
+    const user = this.activeUser();
+    const household = this.household();
+    if (!user || !household) return;
+    const source = this.incomeSourceInput().trim();
+    const amount = this.incomeAmountInput();
+    if (!source || !amount || amount <= 0) {
+      this.toast.warning('Please enter a source and amount.');
+      return;
+    }
+    const entry = {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      householdId: household.id,
+      source,
+      amount,
+      date: new Date().toISOString()
+    };
+    this.appState.addAdditionalIncome(entry);
+    this.incomeSourceInput.set('');
+    this.incomeAmountInput.set(null);
+    this.showIncomeForm.set(false);
+    this.toast.success(`Added $${amount} from ${source}.`);
+  }
+
+  removeAdditionalIncome(entryId: string): void {
+    this.appState.deleteAdditionalIncome(entryId);
+    this.toast.success('Income entry removed.');
+  }
 
   setContribution(goalId: string, value: string): void {
     const amount = Number(value);
@@ -169,14 +451,17 @@ export class HouseholdComponent {
       return;
     }
 
-    const nextGoals = this.appState.savingsGoals().map((goal) =>
-      goal.id === goalId ? { ...goal, currentAmount: goal.currentAmount + amount } : goal
-    );
-    this.appState.updateSavings(nextGoals);
+    const added = this.appState.addSavingsContribution(goalId, amount, this.activeUser()?.id);
+    if (!added) {
+      this.toast.warning('Unable to add contribution right now.');
+      return;
+    }
+
     this.contributionInput.set({
       ...this.contributionInput(),
       [goalId]: 0
     });
+    this.toast.success(`$${amount} contributed.`);
   }
 
   openJoinModal(): void {

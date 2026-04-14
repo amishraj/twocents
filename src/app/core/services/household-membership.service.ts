@@ -60,6 +60,12 @@ export class HouseholdMembershipService {
       return 'You are not part of a household right now.';
     }
 
+    const activeMember = currentHousehold.members.find((member) => member.userId === activeUser.id);
+    const hasOtherMembers = currentHousehold.members.some((member) => member.userId !== activeUser.id);
+    if (activeMember?.role === 'owner' && hasOtherMembers) {
+      return 'As household owner, you need consent from all other members before leaving.';
+    }
+
     const households = this.appState.households()
       .map((household) => {
         if (household.id !== currentHousehold.id) {

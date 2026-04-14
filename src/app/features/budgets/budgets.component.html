@@ -13,12 +13,17 @@
     <form class="card form" [formGroup]="budgetForm" (ngSubmit)="addBudget()">
       <div class="field">
         <label>Category</label>
-        <select formControlName="categoryId" (change)="onBudgetCategorySelect($event)">
-          @for (category of categories(); track category.id) {
-            <option [value]="category.id">{{ category.name }}</option>
-          }
-          <option value="__new__">+ New category</option>
-        </select>
+        <div class="category-row">
+          <select formControlName="categoryId" (change)="onBudgetCategorySelect($event)">
+            @for (category of categories(); track category.id) {
+              <option [value]="category.id">{{ category.name }}</option>
+            }
+            <option value="__new__">+ New category</option>
+          </select>
+          <button type="button" class="tiny-icon" (click)="openRenameCategoryForCreate()" aria-label="Rename category">
+            <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+        </div>
       </div>
       <div class="field">
         <label>Limit</label>
@@ -61,17 +66,82 @@
               <h3>{{ item.category?.name || 'Category' }}</h3>
               <p>{{ item.budget.period }}</p>
             </div>
-            <button type="button" class="icon-btn danger" (click)="removeBudget(item.budget.id)" aria-label="Delete budget">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
-          </div>
-          <div class="stats">
-            <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
-            <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
-            <div class="track">
-              <div class="fill" [style.width.%]="item.percent" [style.background]="item.category?.color"></div>
+            <div class="card-actions">
+              <button
+                type="button"
+                class="icon-btn"
+                (click)="editingBudgetId() === item.budget.id ? cancelEditBudget() : startEditBudget(item.budget.id)"
+                [attr.aria-label]="editingBudgetId() === item.budget.id ? 'Cancel edit budget' : 'Edit budget'"
+              >
+                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="icon-btn danger" (click)="requestRemoveBudget(item.budget.id)" aria-label="Delete budget">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
             </div>
           </div>
+
+          @if (editingBudgetId() === item.budget.id) {
+            <form class="inline-editor" [formGroup]="editBudgetForm" (ngSubmit)="saveBudgetEdit(item.budget.id)">
+              <div class="field">
+                <label>Category</label>
+                <div class="category-row">
+                  <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
+                    @for (category of categories(); track category.id) {
+                      <option [value]="category.id">{{ category.name }}</option>
+                    }
+                    <option value="__new__">+ New category</option>
+                  </select>
+                  <button type="button" class="tiny-icon" (click)="openRenameCategoryForEdit()" aria-label="Rename category">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="split">
+                <div class="field">
+                  <label>Period</label>
+                  <select formControlName="period">
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Scope</label>
+                  <select formControlName="scope">
+                    @if (hasHousehold()) {
+                      <option value="shared">Shared</option>
+                    }
+                    <option value="personal">Personal</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field amount-editor">
+                <div class="amount-head">
+                  <label>Budget limit</label>
+                  <span>${{ (editBudgetForm.value.limit ?? 0) | number: '1.0-2' }}</span>
+                </div>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  formControlName="limit"
+                  (input)="setEditLimit($any($event.target).value)"
+                />
+              </div>
+              <div class="editor-actions">
+                <button type="button" class="ghost" (click)="cancelEditBudget()">Cancel</button>
+                <button type="submit" class="primary">Save</button>
+              </div>
+            </form>
+          } @else {
+            <div class="stats">
+              <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
+              <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
+              <div class="track">
+                <div class="fill" [style.width.%]="item.percent" [style.background]="budgetUsageColor(item.percent)"></div>
+              </div>
+            </div>
+          }
         </div>
       }
       @if (sharedBudgetSummaries().length === 0) {
@@ -94,17 +164,82 @@
               <h3>{{ item.category?.name || 'Category' }}</h3>
               <p>{{ item.budget.period }}</p>
             </div>
-            <button type="button" class="icon-btn danger" (click)="removeBudget(item.budget.id)" aria-label="Delete budget">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
-          </div>
-          <div class="stats">
-            <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
-            <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
-            <div class="track">
-              <div class="fill" [style.width.%]="item.percent" [style.background]="item.category?.color"></div>
+            <div class="card-actions">
+              <button
+                type="button"
+                class="icon-btn"
+                (click)="editingBudgetId() === item.budget.id ? cancelEditBudget() : startEditBudget(item.budget.id)"
+                [attr.aria-label]="editingBudgetId() === item.budget.id ? 'Cancel edit budget' : 'Edit budget'"
+              >
+                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="icon-btn danger" (click)="requestRemoveBudget(item.budget.id)" aria-label="Delete budget">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
             </div>
           </div>
+
+          @if (editingBudgetId() === item.budget.id) {
+            <form class="inline-editor" [formGroup]="editBudgetForm" (ngSubmit)="saveBudgetEdit(item.budget.id)">
+              <div class="field">
+                <label>Category</label>
+                <div class="category-row">
+                  <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
+                    @for (category of categories(); track category.id) {
+                      <option [value]="category.id">{{ category.name }}</option>
+                    }
+                    <option value="__new__">+ New category</option>
+                  </select>
+                  <button type="button" class="tiny-icon" (click)="openRenameCategoryForEdit()" aria-label="Rename category">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="split">
+                <div class="field">
+                  <label>Period</label>
+                  <select formControlName="period">
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Scope</label>
+                  <select formControlName="scope">
+                    @if (hasHousehold()) {
+                      <option value="shared">Shared</option>
+                    }
+                    <option value="personal">Personal</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field amount-editor">
+                <div class="amount-head">
+                  <label>Budget limit</label>
+                  <span>${{ (editBudgetForm.value.limit ?? 0) | number: '1.0-2' }}</span>
+                </div>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  formControlName="limit"
+                  (input)="setEditLimit($any($event.target).value)"
+                />
+              </div>
+              <div class="editor-actions">
+                <button type="button" class="ghost" (click)="cancelEditBudget()">Cancel</button>
+                <button type="submit" class="primary">Save</button>
+              </div>
+            </form>
+          } @else {
+            <div class="stats">
+              <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
+              <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
+              <div class="track">
+                <div class="fill" [style.width.%]="item.percent" [style.background]="budgetUsageColor(item.percent)"></div>
+              </div>
+            </div>
+          }
         </div>
       }
       @if (personalBudgetSummaries().length === 0) {
@@ -117,6 +252,31 @@
     <app-category-modal
       (created)="onCategoryCreated($event)"
       (closed)="closeCategoryModal()"
+    />
+  }
+
+  @if (showRenameCategoryModal()) {
+    <div class="overlay" (click)="closeRenameCategoryModal()"></div>
+    <div class="rename-modal">
+      <h3>Rename category</h3>
+      <form [formGroup]="renameCategoryForm" (ngSubmit)="saveCategoryRename()">
+        <input type="text" formControlName="name" placeholder="Category name" />
+        <div class="rename-actions">
+          <button type="button" class="ghost" (click)="closeRenameCategoryModal()">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </div>
+  }
+
+  @if (confirmDeleteBudgetId()) {
+    <app-confirm-modal
+      title="Delete budget?"
+      message="This budget will be removed immediately and cannot be recovered."
+      confirmLabel="Delete"
+      [danger]="true"
+      (cancel)="cancelRemoveBudget()"
+      (confirm)="removeBudget()"
     />
   }
 </div>

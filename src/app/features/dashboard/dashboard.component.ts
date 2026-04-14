@@ -1,27 +1,44 @@
-import { Component, computed, ViewChild, ElementRef, AfterViewInit, OnDestroy, effect } from '@angular/core';
+import { Component, computed, signal, ViewChildren, QueryList, AfterViewInit, OnDestroy, effect, inject, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { Budget, Transaction } from '../../core/models/app.models';
-import { Chart, DoughnutController, ArcElement, Tooltip, Legend } from 'chart.js';
+import { TransactionRowComponent } from '../../shared/transaction-row/transaction-row.component';
+import {
+  Chart,
+  DoughnutController,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  TooltipItem
+} from 'chart.js';
 
-Chart.register(DoughnutController, ArcElement, Tooltip, Legend);
+Chart.register(DoughnutController, ArcElement, Tooltip, Legend, CategoryScale, LinearScale);
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, TransactionRowComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
 export class DashboardComponent implements AfterViewInit, OnDestroy {
-  @ViewChild('spendChart', { static: true }) spendChartRef!: ElementRef<HTMLCanvasElement>;
-  private chart: Chart<'doughnut'> | null = null;
+  @ViewChildren('spendChartCanvas') spendChartRef!: QueryList<ElementRef<HTMLCanvasElement>>;
+  @ViewChildren('budgetGaugeCanvas') budgetGaugeRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
 
-  /** Arc length of the semicircle (π × r, where r = 50) */
-  readonly arcLength = Math.PI * 50;
+  private _spendChart: Chart<'doughnut'> | null = null;
+  readonly budgetCharts: Chart<'doughnut'>[] = [];
+  readonly selectedCategories = signal(new Set<string>());
+
+  get hasCategoryFilter(): boolean {
+    return this.selectedCategories().size > 0;
+  }
+
+  get spendChart(): Chart<'doughnut'> | null { return this._spendChart; }
 
   activeUser = computed(() => this.auth.getActiveUser());
   household = computed(() => {
@@ -29,7 +46,13 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     return user ? this.appState.householdById(user.householdId) : undefined;
   });
 
-  recentTransactions = computed(() => this.appState.transactions().slice(0, 10));
+  recentTransactions = computed(() =>
+    this.appState
+      .transactions()
+      .slice()
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 10)
+  );
 
   rangeTransactions = computed(() => {
     const range = this.ui.dashboardRange();
@@ -39,6 +62,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     return this.appState
       .transactions()
       .filter((transaction) => new Date(transaction.date) >= start)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 12);
   });
 
@@ -54,11 +78,16 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         amount
       }))
       .filter((item) => item.category)
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 5);
+      .sort((a, b) => b.amount - a.amount);
   });
 
-  totalSpend = computed(() => this.categorySpend().reduce((sum, item) => sum + item.amount, 0));
+  filteredCategorySpend = computed(() => {
+    const selected = this.selectedCategories();
+    if (selected.size === 0) return this.categorySpend();
+    return this.categorySpend().filter((item) => selected.has(item.category!.id));
+  });
+
+  totalSpend = computed(() => this.filteredCategorySpend().reduce((sum, item) => sum + item.amount, 0));
 
   budgetProgress = computed(() => {
     const budgets = this.appState.budgets();
@@ -74,51 +103,90 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     void this.appState.ensureRecurringUpToDate();
 
     effect(() => {
-      const data = this.categorySpend();
-      if (this.chart) {
-        this.chart.data.labels = data.map((i) => i.category?.name ?? '');
-        this.chart.data.datasets[0].data = data.map((i) => i.amount);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this.chart.data.datasets[0] as any).backgroundColor = data.map(
-          (i) => i.category?.color ?? '#888'
-        );
-        this.chart.update('active');
+      const budgetData = this.budgetProgress();
+      for (let i = 0; i < budgetData.length; i++) {
+        const item = budgetData[i];
+        const chart = this.budgetCharts[i];
+        if (chart) {
+          chart.data.datasets[0].data = [item.percent, 100 - item.percent];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (chart.data.datasets[0] as any).backgroundColor = [
+            this.getHealthColor(item.percent, item.color),
+            '#f1f5f9'
+          ];
+          chart.update('none');
+        }
       }
     });
   }
 
   ngAfterViewInit(): void {
-    this.initChart();
+    setTimeout(() => {
+      this.initSpendChart();
+      this.initBudgetCharts();
+    }, 0);
   }
 
   ngOnDestroy(): void {
-    this.chart?.destroy();
-    this.chart = null;
+    this._spendChart?.destroy();
+    for (const chart of this.budgetCharts) {
+      chart.destroy();
+    }
+    this._spendChart = null;
+    this.budgetCharts.splice(0);
   }
 
   setRange(range: 'week' | 'month'): void {
     this.ui.setRange(range);
   }
 
-  /** Returns the stroke-dashoffset for a semicircle gauge at a given percent. */
-  getArcOffset(percent: number): number {
-    return this.arcLength * (1 - Math.min(percent, 100) / 100);
+  toggleCategory(categoryId: string): void {
+    const current = new Set(this.selectedCategories());
+    if (current.has(categoryId)) {
+      current.delete(categoryId);
+    } else {
+      current.add(categoryId);
+    }
+    this.selectedCategories.set(current);
+    this.updateSpendChart();
   }
 
-  /** Returns a health-aware color: category color below 85%, amber at 85-99%, red at 100%+. */
+  clearCategoryFilter(): void {
+    this.selectedCategories.set(new Set());
+    this.updateSpendChart();
+  }
+
+  private updateSpendChart(): void {
+    const data = this.filteredCategorySpend();
+    if (!this._spendChart) return;
+    this._spendChart.data.labels = data.map((i) => i.category?.name ?? '');
+    this._spendChart.data.datasets[0].data = data.map((i) => i.amount);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this._spendChart.data.datasets[0] as any).backgroundColor = data.map(
+      (i) => i.category?.color ?? '#888'
+    );
+    this._spendChart.update('active');
+  }
+
+  isCategorySelected(categoryId: string): boolean {
+    const selected = this.selectedCategories();
+    if (selected.size === 0) return true;
+    return selected.has(categoryId);
+  }
+
   getHealthColor(percent: number, categoryColor: string): string {
     if (percent >= 100) return '#dc2626';
     if (percent >= 85) return '#d97706';
     return categoryColor;
   }
 
-  private initChart(): void {
-    const canvas = this.spendChartRef?.nativeElement;
+  private initSpendChart(): void {
+    const canvas = this.spendChartRef?.first?.nativeElement;
     if (!canvas) return;
 
-    const data = this.categorySpend();
+    const data = this.filteredCategorySpend();
 
-    this.chart = new Chart(canvas, {
+    this._spendChart = new Chart(canvas, {
       type: 'doughnut',
       data: {
         labels: data.map((i) => i.category?.name ?? ''),
@@ -126,9 +194,9 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
           {
             data: data.map((i) => i.amount),
             backgroundColor: data.map((i) => i.category?.color ?? '#888'),
-            borderWidth: 3,
+            borderWidth: 2,
             borderColor: '#ffffff',
-            hoverOffset: 12
+            hoverOffset: 0
           }
         ]
       },
@@ -136,27 +204,69 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         cutout: '68%',
         responsive: true,
         maintainAspectRatio: true,
-        animation: { animateRotate: true, duration: 700 },
+        animation: { animateRotate: true, animateScale: false, duration: 700 },
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgba(15,23,42,0.88)',
-            titleFont: { family: 'Inter', size: 13, weight: 'bold' },
-            bodyFont: { family: 'Inter', size: 12 },
-            padding: 12,
-            cornerRadius: 10,
+            backgroundColor: 'rgba(15,23,42,0.95)',
+            titleFont: { family: 'Inter', size: 12, weight: 'bold' },
+            bodyFont: { family: 'Inter', size: 12, weight: 'normal' },
+            padding: 10,
+            cornerRadius: 8,
+            displayColors: false,
             callbacks: {
-              label: (context) => {
+              title: (items) => items[0]?.label ?? '',
+              label: (context: TooltipItem<'doughnut'>) => {
                 const total = (context.dataset.data as number[]).reduce((a, b) => a + b, 0);
                 const value = context.raw as number;
                 const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-                return `  $${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}  ·  ${pct}%`;
+                const formatted = value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                return `$${formatted}  ·  ${pct}%`;
               }
             }
           }
         }
       }
     });
+  }
+
+  private initBudgetCharts(): void {
+    const canvases = this.budgetGaugeRefs?.toArray() ?? [];
+    const budgetData = this.budgetProgress();
+
+    for (let i = 0; i < Math.min(canvases.length, budgetData.length); i++) {
+      const canvas = canvases[i].nativeElement;
+      const item = budgetData[i];
+
+      const chart = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          labels: [item.categoryName, 'Remaining'],
+          datasets: [
+            {
+              data: [item.percent, 100 - item.percent],
+              backgroundColor: [this.getHealthColor(item.percent, item.color), '#f1f5f9'],
+              borderWidth: 0,
+              hoverOffset: 6
+            }
+          ]
+        },
+        options: {
+          cutout: '72%',
+          responsive: true,
+          maintainAspectRatio: true,
+          animation: { animateRotate: true, animateScale: false, duration: 600 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              enabled: false
+            }
+          }
+        }
+      });
+
+      this.budgetCharts.push(chart);
+    }
   }
 
   private buildBudgetProgress(

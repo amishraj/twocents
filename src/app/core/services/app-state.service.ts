@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import {
+  AdditionalIncomeEntry,
   Budget,
   BudgetCategory,
   Household,
@@ -8,6 +9,7 @@ import {
   InvestmentEntry,
   RecurringTemplate,
   SavingsGoal,
+  Scope,
   Transaction,
   User
 } from '../models/app.models';
@@ -37,7 +39,8 @@ const STORAGE_KEYS = {
   investments: 'bt_investments',
   invites: 'bt_invites',
   householdChangeRequests: 'bt_household_change_requests',
-  recurringTemplates: 'bt_recurring_templates'
+  recurringTemplates: 'bt_recurring_templates',
+  additionalIncome: 'bt_additional_income'
 };
 
 @Injectable({ providedIn: 'root' })
@@ -62,6 +65,9 @@ export class AppStateService {
   private readonly recurringTemplatesSignal = signal<RecurringTemplate[]>(
     this.storage.getItem(STORAGE_KEYS.recurringTemplates, [])
   );
+  private readonly additionalIncomeSignal = signal<AdditionalIncomeEntry[]>(
+    this.storage.getItem(STORAGE_KEYS.additionalIncome, [])
+  );
 
   private readonly authUidSignal = signal<string | null>(null);
   private readonly unsubscribers: Unsubscribe[] = [];
@@ -74,7 +80,9 @@ export class AppStateService {
 
   readonly users = computed(() => this.usersSignal());
   readonly households = computed(() => this.householdsSignal());
-  readonly categories = computed(() => this.categoriesSignal());
+  readonly categories = computed(() =>
+    this.categoriesSignal().filter((c) => c.name.toLowerCase() !== 'porn')
+  );
   readonly budgets = computed(() => this.budgetsSignal());
   readonly transactions = computed(() => this.transactionsSignal());
   readonly savingsGoals = computed(() => this.savingsSignal());
@@ -82,6 +90,7 @@ export class AppStateService {
   readonly invites = computed(() => this.invitesSignal());
   readonly householdChangeRequests = computed(() => this.householdChangeRequestsSignal());
   readonly recurringTemplates = computed(() => this.recurringTemplatesSignal());
+  readonly additionalIncome = computed(() => this.additionalIncomeSignal());
 
   constructor() {
     onAuthStateChanged(this.firebase.auth, (authUser) => {
@@ -174,6 +183,13 @@ export class AppStateService {
     void this.upsertHouseholdDoc('savings', normalized.id, normalized);
   }
 
+  removeSavingsGoal(goalId: string): void {
+    const next = this.savingsSignal().filter((goal) => goal.id !== goalId);
+    this.savingsSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.savings, next);
+    void this.upsertHouseholdDoc('savings', goalId, { deleted: true, deletedAt: new Date().toISOString() });
+  }
+
   addInvestment(entry: InvestmentEntry): void {
     const next = [entry, ...this.investmentsSignal()];
     this.investmentsSignal.set(next);
@@ -224,6 +240,49 @@ export class AppStateService {
     }
   }
 
+  addSavingsContribution(goalId: string, amount: number, paidByUserId?: string): boolean {
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return false;
+    }
+
+    const goal = this.savingsSignal().find((item) => item.id === goalId);
+    if (!goal) {
+      return false;
+    }
+
+    const userId = paidByUserId?.trim() || this.authUidSignal() || '';
+    if (!userId) {
+      return false;
+    }
+
+    const normalizedAmount = Math.round(parsedAmount * 100) / 100;
+    const nextGoals = this.savingsSignal().map((item) =>
+      item.id === goalId
+        ? {
+            ...item,
+            currentAmount: item.currentAmount + normalizedAmount
+          }
+        : item
+    );
+    this.updateSavings(nextGoals);
+
+    const categoryId = this.ensureSavingsCategoryId(goal.scope);
+    this.addTransaction({
+      id: createId(),
+      title: `Savings contribution: ${goal.name}`,
+      amount: normalizedAmount,
+      categoryId,
+      paidByUserId: userId,
+      date: new Date().toISOString(),
+      scope: goal.scope,
+      recurring: false,
+      notes: `Added to ${goal.name}`
+    });
+
+    return true;
+  }
+
   updateInvestments(entries: InvestmentEntry[]): void {
     this.investmentsSignal.set(entries);
     this.storage.setItem(STORAGE_KEYS.investments, entries);
@@ -270,6 +329,25 @@ export class AppStateService {
     this.recurringTemplatesSignal.set(next);
     this.storage.setItem(STORAGE_KEYS.recurringTemplates, next);
     void this.upsertHouseholdDoc('recurringTemplates', normalized.id, normalized);
+  }
+
+  addAdditionalIncome(entry: AdditionalIncomeEntry): void {
+    const next = [entry, ...this.additionalIncomeSignal()];
+    this.additionalIncomeSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.additionalIncome, next);
+    void this.upsertHouseholdDoc('additionalIncome', entry.id, entry);
+  }
+
+  updateAdditionalIncomes(entries: AdditionalIncomeEntry[]): void {
+    this.additionalIncomeSignal.set(entries);
+    this.storage.setItem(STORAGE_KEYS.additionalIncome, entries);
+  }
+
+  deleteAdditionalIncome(entryId: string): void {
+    const next = this.additionalIncomeSignal().filter((e) => e.id !== entryId);
+    this.additionalIncomeSignal.set(next);
+    this.storage.setItem(STORAGE_KEYS.additionalIncome, next);
+    void this.upsertHouseholdDoc('additionalIncome', entryId, { deleted: true });
   }
 
   async ensureRecurringUpToDate(): Promise<void> {
@@ -355,7 +433,7 @@ export class AppStateService {
       return householdId;
     }
 
-    return household.members.some((member) => member.userId === uid) ? householdId : null;
+    return householdId;
   }
 
   private resolveScope(scope: 'personal' | 'shared'): 'personal' | 'shared' {
@@ -364,6 +442,23 @@ export class AppStateService {
     }
 
     return scope;
+  }
+
+  private ensureSavingsCategoryId(scope: Scope): string {
+    const existing = this.categoriesSignal().find((category) => category.name.trim().toLowerCase() === 'savings');
+    if (existing) {
+      return existing.id;
+    }
+
+    const category: BudgetCategory = {
+      id: createId(),
+      name: 'Savings',
+      color: '#10B981',
+      icon: 'piggy',
+      defaultScope: scope
+    };
+    this.addCategory(category);
+    return category.id;
   }
 
   private watchUser(uid: string): void {
@@ -391,6 +486,31 @@ export class AppStateService {
     this.unsubscribers.push(userUnsub);
   }
 
+  private watchHouseholdMembers(memberIds: string[]): void {
+    for (const memberId of memberIds) {
+      const userDoc = doc(this.firebase.firestore, 'users', memberId);
+      const unsub = onSnapshot(userDoc, (snapshot) => {
+        if (!snapshot.exists()) {
+          return;
+        }
+
+        const data = snapshot.data() as User;
+        const users = this.usersSignal().filter((item) => item.id !== memberId);
+        const nextUsers = [
+          {
+            ...data,
+            id: memberId
+          },
+          ...users
+        ];
+        this.usersSignal.set(nextUsers);
+        this.storage.setItem(STORAGE_KEYS.users, nextUsers);
+      });
+
+      this.householdUnsubscribers.push(unsub);
+    }
+  }
+
   private watchHousehold(householdId: string): void {
     const householdDoc = doc(this.firebase.firestore, 'households', householdId);
     const householdUnsub = onSnapshot(householdDoc, (snapshot) => {
@@ -405,6 +525,8 @@ export class AppStateService {
       ];
       this.householdsSignal.set(next);
       this.storage.setItem(STORAGE_KEYS.households, next);
+
+      this.watchHouseholdMembers(household.members.map(m => m.userId));
 
       const currentUid = this.authUidSignal();
       if (currentUid) {
@@ -430,6 +552,12 @@ export class AppStateService {
       'recurringTemplates',
       this.recurringTemplatesSignal,
       STORAGE_KEYS.recurringTemplates,
+      householdId
+    );
+    this.watchHouseholdCollection<AdditionalIncomeEntry>(
+      'additionalIncome',
+      this.additionalIncomeSignal,
+      STORAGE_KEYS.additionalIncome,
       householdId
     );
 
@@ -554,6 +682,7 @@ export class AppStateService {
     this.watchUserCollection<SavingsGoal>('savings', this.savingsSignal, STORAGE_KEYS.savings, uid);
     this.watchUserCollection<InvestmentEntry>('investments', this.investmentsSignal, STORAGE_KEYS.investments, uid);
     this.watchUserCollection<RecurringTemplate>('recurringTemplates', this.recurringTemplatesSignal, STORAGE_KEYS.recurringTemplates, uid);
+    this.watchUserCollection<AdditionalIncomeEntry>('additionalIncome', this.additionalIncomeSignal, STORAGE_KEYS.additionalIncome, uid);
     void this.ensureRecurringUpToDate();
   }
 

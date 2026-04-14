@@ -51,8 +51,10 @@ export class ShellComponent {
     { label: 'Transactions', route: '/transactions', icon: 'swap' },
     { label: 'Budgets', route: '/budgets', icon: 'chart' },
     { label: 'Savings', route: '/savings', icon: 'piggy' },
+    { label: 'Banks', route: '/banks', icon: 'bank' },
     { label: 'Household', route: '/household', icon: 'home' },
     { label: 'Investments', route: '/investments', icon: 'stock' },
+    { label: 'Splitwise', route: '/splitwise', icon: 'share' },
     { label: 'Profile', route: '/profile', icon: 'user' }
   ];
 

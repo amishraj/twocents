@@ -22,12 +22,17 @@
         </div>
         <div class="field">
           <label>Category</label>
-          <select formControlName="categoryId" (change)="onCategorySelect($event)">
-            @for (category of categories(); track category.id) {
-              <option [value]="category.id">{{ category.name }}</option>
-            }
-            <option value="__new__">+ New category</option>
-          </select>
+          <div class="category-row">
+            <select formControlName="categoryId" (change)="onCategorySelect($event)">
+              @for (category of categories(); track category.id) {
+                <option [value]="category.id">{{ category.name }}</option>
+              }
+              <option value="__new__">+ New category</option>
+            </select>
+            <button type="button" class="tiny-icon" (click)="openRenameCategory()" aria-label="Rename category">
+              <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -35,7 +40,11 @@
         <div class="field">
           <label>Paid by</label>
           <select formControlName="paidByUserId">
-            @if (activeUser()) {
+            @if (hasHousehold()) {
+              @for (member of householdMembers(); track member.userId) {
+                <option [value]="member.userId">{{ member.displayName }}</option>
+              }
+            } @else if (activeUser()) {
               <option [value]="activeUser()?.id">{{ activeUser()?.name }}</option>
             }
           </select>
@@ -80,4 +89,18 @@
     (created)="onCategoryCreated($event)"
     (closed)="closeCategoryModal()"
   />
+}
+
+@if (showRenameCategoryModal()) {
+  <div class="rename-overlay" (click)="closeRenameCategoryModal()"></div>
+  <div class="rename-modal">
+    <h3>Rename category</h3>
+    <form [formGroup]="renameCategoryForm" (ngSubmit)="saveCategoryRename()">
+      <input type="text" formControlName="name" placeholder="Category name" />
+      <div class="rename-actions">
+        <button type="button" class="ghost" (click)="closeRenameCategoryModal()">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
 }

@@ -8,12 +8,13 @@ import { HouseholdMembershipService } from '../../core/services/household-member
 import { InviteEmailService } from '../../core/services/invite-email.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
 import { ToastService } from '../../shared/toast/toast.service';
+import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
 import { createId, createInviteCode, createInviteExpiry } from '../../core/utils/id';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, ConfirmModalComponent],
   templateUrl: './profile.component.html',
   styleUrl: './profile.component.scss'
 })
@@ -30,6 +31,7 @@ export class ProfileComponent {
   householdMessage = '';
   confirmLeave = signal(false);
   confirmReset = signal(false);
+  confirmInviteCancelId = signal<string | null>(null);
 
   isAdmin = computed(() => this.user()?.email === 'amish197@gmail.com');
 
@@ -192,13 +194,28 @@ export class ProfileComponent {
     this.inviteForm.reset({ email: '' });
   }
 
-  cancelInvite(inviteId: string): void {
+  requestCancelInvite(inviteId: string): void {
+    this.confirmInviteCancelId.set(inviteId);
+  }
+
+  cancelInviteModal(): void {
+    this.confirmInviteCancelId.set(null);
+  }
+
+  confirmCancelInvite(): void {
+    const inviteId = this.confirmInviteCancelId();
+    if (!inviteId) {
+      return;
+    }
+
     const invite = this.appState.invites().find((item) => item.id === inviteId);
     if (!invite) {
+      this.confirmInviteCancelId.set(null);
       return;
     }
 
     this.appState.removeInvite(inviteId);
+    this.confirmInviteCancelId.set(null);
     this.householdMessage = `Invite canceled for ${invite.email}.`;
   }
 

@@ -26,7 +26,15 @@ export class QuickAddExpenseComponent {
   categories = computed(() => this.appState.categories());
   activeUser = computed(() => this.auth.getActiveUser());
   hasHousehold = computed(() => Boolean(this.activeUser()?.householdId?.trim()));
+  householdMembers = computed(() => {
+    const user = this.activeUser();
+    if (!user?.householdId) return [];
+    const household = this.appState.householdById(user.householdId);
+    return household?.members ?? [];
+  });
   showCategoryModal = signal(false);
+  showRenameCategoryModal = signal(false);
+  renameCategoryId = signal<string | null>(null);
 
   form = this.fb.group({
     title: ['', Validators.required],
@@ -36,6 +44,10 @@ export class QuickAddExpenseComponent {
     date: [new Date().toISOString().slice(0, 10), Validators.required],
     scope: ['shared', Validators.required],
     recurring: [false]
+  });
+
+  renameCategoryForm = this.fb.group({
+    name: ['', Validators.required]
   });
 
   constructor() {
@@ -53,6 +65,7 @@ export class QuickAddExpenseComponent {
   }
 
   close(): void {
+    this.closeRenameCategoryModal();
     this.ui.closeQuickAdd();
   }
 
@@ -74,6 +87,69 @@ export class QuickAddExpenseComponent {
     if (!this.form.value.categoryId) {
       this.form.patchValue({ categoryId: this.categories()[0]?.id ?? '' });
     }
+  }
+
+  openRenameCategory(): void {
+    const categoryId = this.form.value.categoryId ?? '';
+    if (!categoryId || categoryId === '__new__') {
+      this.toast.info('Select a category first, then rename it.');
+      return;
+    }
+
+    const category = this.appState.categoryById(categoryId);
+    if (!category) {
+      this.toast.warning('Could not find this category right now.');
+      return;
+    }
+
+    this.renameCategoryId.set(categoryId);
+    this.renameCategoryForm.patchValue({ name: category.name });
+    this.showRenameCategoryModal.set(true);
+  }
+
+  closeRenameCategoryModal(): void {
+    this.showRenameCategoryModal.set(false);
+    this.renameCategoryId.set(null);
+    this.renameCategoryForm.reset({ name: '' });
+  }
+
+  saveCategoryRename(): void {
+    if (this.renameCategoryForm.invalid) {
+      this.renameCategoryForm.markAllAsTouched();
+      return;
+    }
+
+    const categoryId = this.renameCategoryId();
+    if (!categoryId) {
+      return;
+    }
+
+    const nextName = (this.renameCategoryForm.value.name ?? '').trim();
+    if (!nextName) {
+      this.toast.warning('Category name cannot be empty.');
+      return;
+    }
+
+    const duplicate = this.appState
+      .categories()
+      .some((category) => category.id !== categoryId && category.name.trim().toLowerCase() === nextName.toLowerCase());
+    if (duplicate) {
+      this.toast.warning('A category with this name already exists.');
+      return;
+    }
+
+    const nextCategories = this.appState.categories().map((category) =>
+      category.id === categoryId
+        ? {
+            ...category,
+            name: nextName
+          }
+        : category
+    );
+
+    this.appState.updateCategories(nextCategories);
+    this.closeRenameCategoryModal();
+    this.toast.success('Category renamed.');
   }
 
   submit(): void {

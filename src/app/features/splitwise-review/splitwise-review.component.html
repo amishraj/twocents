@@ -1,0 +1,77 @@
+<div class="review-page">
+  <header class="page-header">
+    <div class="header-left">
+      <button type="button" class="back-btn" (click)="goBack()">Back</button>
+      <div>
+        <h1>Review Expenses</h1>
+        <p class="subtitle">{{ rows().length }} expenses found</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="success-toast" *ngIf="imported() > 0">
+    <p>Successfully imported {{ imported() }} transactions!</p>
+  </div>
+
+  <ng-container *ngIf="imported() === 0">
+    <section class="table-section">
+      <div class="table-header">
+        <label class="checkbox-col">
+          <input
+            type="checkbox"
+            [checked]="selectAll()"
+            (change)="toggleAll()"
+          />
+          <span>Select All</span>
+        </label>
+        <span class="date-col">Date</span>
+        <span class="desc-col">Description</span>
+        <span class="amount-col">Amount</span>
+        <span class="cat-col">Category</span>
+        <span class="source-col">Source</span>
+      </div>
+
+      <div class="table-body">
+        <div class="table-row" *ngFor="let row of rows(); trackBy: trackRow">
+          <label class="checkbox-col">
+            <input
+              type="checkbox"
+              [checked]="row.selected"
+              (change)="toggleRow(i)"
+            />
+          </label>
+          <span class="date-col">{{ row.expense.date | date:'shortDate' }}</span>
+          <span class="desc-col">{{ row.expense.description }}</span>
+          <span class="amount-col">${{ row.amount | number:'1.2-2' }}</span>
+          <span class="cat-col">
+            <select
+              [ngModel]="row.categoryId"
+              (ngModelChange)="setCategory(i, $event)"
+            >
+              <option *ngFor="let cat of categories()" [value]="cat.id">{{ cat.name }}</option>
+            </select>
+          </span>
+          <span class="source-col">{{ getSource(row.expense) }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="import-section">
+      <div class="import-summary">
+        <p>
+          <strong>{{ selectedCount() }}</strong> of
+          <strong>{{ rows().length }}</strong> selected for import
+        </p>
+      </div>
+      <button
+        type="button"
+        class="primary-action import-btn"
+        (click)="importSelected()"
+        [disabled]="loading() || selectedCount() === 0"
+      >
+        <span *ngIf="loading()">Importing...</span>
+        <span *ngIf="!loading()">Import Selected ({{ selectedCount() }})</span>
+      </button>
+    </section>
+  </ng-container>
+</div>

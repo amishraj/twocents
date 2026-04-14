@@ -121,7 +121,7 @@
               <div class="invite-actions">
                 <span class="chip pending">{{ invite.status }}</span>
                 @if (invite.status === 'pending') {
-                  <button type="button" class="cancel-btn" (click)="cancelInvite(invite.id)">Cancel</button>
+                  <button type="button" class="cancel-btn" (click)="requestCancelInvite(invite.id)">Cancel</button>
                 }
               </div>
             </div>
@@ -141,4 +141,15 @@
       }
     </section>
   </div>
+
+  @if (confirmInviteCancelId()) {
+    <app-confirm-modal
+      title="Cancel invite?"
+      message="The invite link will stop working for this recipient."
+      confirmLabel="Cancel invite"
+      [danger]="true"
+      (cancel)="cancelInviteModal()"
+      (confirm)="confirmCancelInvite()"
+    />
+  }
 </div>

@@ -1,0 +1,217 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Banks</h1>
+      <p>Your connected accounts and latest balances.</p>
+    </div>
+    <div class="header-actions">
+      @if (hasConnections()) {
+        <button class="sync-now" type="button" (click)="syncAll()" [disabled]="syncing()">
+          @if (syncing()) {
+            <span class="spinner"></span> Syncing...
+          } @else {
+            <svg class="sync-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Sync now
+          }
+        </button>
+        <button class="settings-icon-btn" type="button" (click)="openResetModal()" title="nuke my connection and start over">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (hasConnections()) {
+    <div class="hero-strip">
+      <div class="hero-stat">
+        <span class="hero-label">Total balance</span>
+        <span class="hero-value">${{ totalBalance() | number: '1.2-2' }}</span>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <span class="hero-label">Connections</span>
+        <span class="hero-value">{{ simplefin.connections().length }}</span>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <span class="hero-label">Accounts</span>
+        <span class="hero-value">{{ simplefin.accounts().length }}</span>
+      </div>
+      @if (simplefin.issues().length > 0) {
+        <div class="hero-divider"></div>
+        <div class="hero-stat">
+          <span class="hero-label hero-warn">Issues</span>
+          <span class="hero-value hero-warn">{{ simplefin.issues().length }}</span>
+        </div>
+      }
+    </div>
+  }
+
+  @if (simplefin.issues().length > 0) {
+    <div class="issues-bar">
+      @for (issue of simplefin.issues(); track issue.code + issue.message + issue.connectionId) {
+        <div class="issue-item">
+          <strong>{{ issue.code }}</strong> — {{ issue.message }}
+        </div>
+      }
+    </div>
+  }
+
+  @if (!syncing()) {
+    @if (hasConnections()) {
+      <div class="connections-grid">
+        @for (group of groupedAccounts(); track group.bankName) {
+          <div class="connection-card">
+            <div class="conn-head">
+              <div class="conn-logo-wrap">
+                @if (group.logoUrl && !hasLogoFailed(group.bankName)) {
+                  <img
+                    class="conn-logo"
+                    [src]="group.logoUrl"
+                    [alt]="group.bankName + ' logo'"
+                    (error)="onLogoError($event, group.bankName)">
+                  <div class="conn-logo-fallback" [style.background]="getBankColor(group.bankName)" style="display:none">
+                    {{ getBankInitial(group.bankName) }}
+                  </div>
+                } @else {
+                  <div class="conn-logo-fallback" [style.background]="getBankColor(group.bankName)">
+                    {{ getBankInitial(group.bankName) }}
+                  </div>
+                }
+              </div>
+              <div class="conn-meta">
+                <h3>{{ group.bankName }}</h3>
+                <p>
+                  {{ group.accountCount }} account{{ group.accountCount !== 1 ? 's' : '' }}
+                  · ${{ group.totalBalance | number: '1.2-2' }} total
+                  @if (group.pending > 0) {
+                    · <span class="warn">{{ group.pending }} pending</span>
+                  }
+                </p>
+              </div>
+            </div>
+
+            <div class="accounts-list">
+              @for (account of group.accounts; track account.id) {
+                <div class="account-row">
+                  <div class="account-info">
+                    <div class="account-name">{{ account.name }}</div>
+                    <div class="account-sub">
+                      {{ account.currency }}
+                      @if (account.pendingCount > 0) {
+                        · <span class="warn">{{ account.pendingCount }} pending</span>
+                      }
+                      @if (account.lastTransactionAt) {
+                        · Last {{ account.lastTransactionAt | date: 'MMM d' }}
+                      }
+                    </div>
+                  </div>
+                  <div class="account-balances">
+                    <div class="balance-primary">${{ account.balance | number: '1.2-2' }}</div>
+                    @if (account.availableBalance !== undefined) {
+                      <div class="balance-sub">Avail ${{ account.availableBalance | number: '1.2-2' }}</div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="connect-section">
+        <div class="connect-header">
+          <h3>Connect your bank</h3>
+          <p>Link a bank or brokerage account to track your balances here.</p>
+        </div>
+        <div class="connect-steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-text">
+              <strong>Open SimpleFIN Bridge</strong>
+              <span>Visit bridge.simplefin.org and sign in (or create an account).</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-text">
+              <strong>Add your bank</strong>
+              <span>Click "Add Account" in SimpleFIN Bridge and follow the steps to link your bank or brokerage.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-text">
+              <strong>Copy the setup token</strong>
+              <span>Copy the token that starts with <code>aHR0...</code> from SimpleFIN Bridge.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-text">
+              <strong>Paste it below</strong>
+              <span>Paste the token in the field below and click Connect.</span>
+            </div>
+          </div>
+        </div>
+        <form class="connect-form" [formGroup]="form" (ngSubmit)="connect()">
+          <div class="token-row">
+            <div class="token-field">
+              <label>Paste SimpleFIN setup token</label>
+              <textarea
+                formControlName="setupToken"
+                placeholder="aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmluLm9yZy9zaW1wbGVmaW4vY2xhaW0v..."
+                rows="2"
+                [disabled]="syncing()"
+              ></textarea>
+            </div>
+            <button class="primary connect-btn" type="submit" [disabled]="syncing()">
+              @if (syncing()) {
+                <span class="spinner light"></span>
+                Connecting...
+              } @else {
+                Connect
+              }
+            </button>
+          </div>
+          <a class="token-link" href="https://bridge.simplefin.org/simplefin/create" target="_blank" rel="noopener">Open SimpleFIN Bridge →</a>
+        </form>
+      </div>
+    }
+  }
+
+  @if (syncing() || pendingInitialSync()) {
+    <div class="loading-modal">
+      <div class="loading-modal-inner">
+        <div class="loading-spinner">
+          <svg viewBox="0 0 50 50" fill="none">
+            <circle cx="25" cy="25" r="20" stroke="var(--border-subtle)" stroke-width="4"/>
+            <circle cx="25" cy="25" r="20" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="60 100"/>
+          </svg>
+        </div>
+        <p class="loading-message">{{ syncing() ? loadingMessage() : 'Loading your accounts...' }}</p>
+      </div>
+    </div>
+  }
+
+  @if (showResetModal()) {
+    <div class="reset-modal-overlay" (click)="closeResetModal()">
+      <div class="reset-modal" (click)="$event.stopPropagation()">
+        <div class="reset-modal-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </div>
+        <h3>Manage bank connections</h3>
+        <p>Remove all connected bank links and synced account data from this app. You can reconnect anytime with a new SimpleFIN token.</p>
+        <div class="reset-modal-actions">
+          <button type="button" class="ghost-btn" (click)="visitSimpleFINBridge()">
+            Visit SimpleFIN Bridge
+          </button>
+          <button type="button" class="danger-btn" (click)="confirmReset()">
+            Reset all
+          </button>
+        </div>
+        <button type="button" class="cancel-link" (click)="closeResetModal()">Cancel</button>
+      </div>
+    </div>
+  }
+</div>

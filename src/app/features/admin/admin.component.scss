@@ -38,6 +38,12 @@ p {
   border: 1px solid #fca5a5;
 }
 
+.warning-outline {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
 .danger:disabled {
   opacity: 0.65;
   cursor: not-allowed;

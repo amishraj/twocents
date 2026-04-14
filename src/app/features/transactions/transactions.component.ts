@@ -8,11 +8,13 @@ import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../shared/toast/toast.service';
 import { CategoryModalComponent } from '../../shared/category-modal/category-modal.component';
+import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
+import { TransactionRowComponent } from '../../shared/transaction-row/transaction-row.component';
 
 @Component({
   selector: 'app-transactions',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, CategoryModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, CategoryModalComponent, ConfirmModalComponent, TransactionRowComponent],
   templateUrl: './transactions.component.html',
   styleUrl: './transactions.component.scss'
 })
@@ -25,6 +27,11 @@ export class TransactionsComponent {
   editingId = signal<string | null>(null);
   confirmDeleteId = signal<string | null>(null);
   showCategoryModal = signal(false);
+  showRenameCategoryModal = signal(false);
+  renameCategoryId = signal<string | null>(null);
+  categoryFilterOpen = signal(false);
+  categoryFilter = signal<string | null>(null);
+  numericCompare = signal<'lt' | 'eq' | 'gt'>('eq');
 
   filterForm = this.fb.group({
     query: [''],
@@ -39,22 +46,53 @@ export class TransactionsComponent {
     date: ['', Validators.required]
   });
 
+  renameCategoryForm = this.fb.group({
+    name: ['', Validators.required]
+  });
+
   private readonly filterValue = toSignal(this.filterForm.valueChanges, {
     initialValue: this.filterForm.getRawValue()
   });
 
   hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
 
+  setNumericCompare(mode: 'lt' | 'eq' | 'gt'): void {
+    this.numericCompare.set(mode);
+  }
+
+  isNumericSearch = computed(() => {
+    const query = (this.filterValue().query ?? '').trim();
+    return query.length > 0 && !isNaN(Number(query));
+  });
+
   filteredTransactions = computed(() => {
     const filter = this.filterValue();
-    const query = (filter.query ?? '').toLowerCase();
+    const query = (filter.query ?? '').trim().toLowerCase();
     const scope = filter.scope ?? 'all';
+    const catFilter = this.categoryFilter();
+    const compare = this.numericCompare();
+
+    const numQuery = Number(query);
+    const isNumericQuery = query.length > 0 && !isNaN(numQuery);
+
     return this.appState
       .transactions()
       .filter((transaction) =>
         scope === 'all' ? true : transaction.scope === scope
       )
-      .filter((transaction) => transaction.title.toLowerCase().includes(query));
+      .filter((transaction) =>
+        catFilter ? transaction.categoryId === catFilter : true
+      )
+      .filter((transaction) => {
+        if (isNumericQuery) {
+          if (compare === 'lt') return transaction.amount <= numQuery;
+          if (compare === 'gt') return transaction.amount >= numQuery;
+          return transaction.amount === numQuery || transaction.amount.toString().includes(query);
+        }
+        return transaction.title.toLowerCase().includes(query);
+      })
+      .slice()
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   });
 
   constructor() {
@@ -85,6 +123,7 @@ export class TransactionsComponent {
   }
 
   cancelEdit(): void {
+    this.closeRenameCategoryModal();
     this.editingId.set(null);
   }
 
@@ -103,6 +142,78 @@ export class TransactionsComponent {
 
   closeCategoryModal(): void {
     this.showCategoryModal.set(false);
+  }
+
+  openRenameCategory(): void {
+    const categoryId = this.editForm.value.categoryId ?? '';
+    if (!categoryId || categoryId === '__new__') {
+      this.toast.info('Select a category first, then rename it.');
+      return;
+    }
+
+    const category = this.appState.categoryById(categoryId);
+    if (!category) {
+      this.toast.warning('Could not find this category right now.');
+      return;
+    }
+
+    this.renameCategoryId.set(categoryId);
+    this.renameCategoryForm.patchValue({ name: category.name });
+    this.showRenameCategoryModal.set(true);
+  }
+
+  closeRenameCategoryModal(): void {
+    this.showRenameCategoryModal.set(false);
+    this.renameCategoryId.set(null);
+    this.renameCategoryForm.reset({ name: '' });
+  }
+
+  saveCategoryRename(): void {
+    if (this.renameCategoryForm.invalid) {
+      this.renameCategoryForm.markAllAsTouched();
+      return;
+    }
+
+    const categoryId = this.renameCategoryId();
+    if (!categoryId) {
+      return;
+    }
+
+    const nextName = (this.renameCategoryForm.value.name ?? '').trim();
+    if (!nextName) {
+      this.toast.warning('Category name cannot be empty.');
+      return;
+    }
+
+    const duplicate = this.appState
+      .categories()
+      .some((category) => category.id !== categoryId && category.name.trim().toLowerCase() === nextName.toLowerCase());
+    if (duplicate) {
+      this.toast.warning('A category with this name already exists.');
+      return;
+    }
+
+    const nextCategories = this.appState.categories().map((category) =>
+      category.id === categoryId
+        ? {
+            ...category,
+            name: nextName
+          }
+        : category
+    );
+
+    this.appState.updateCategories(nextCategories);
+    this.closeRenameCategoryModal();
+    this.toast.success('Category renamed.');
+  }
+
+  toggleCategoryFilter(): void {
+    this.categoryFilterOpen.set(!this.categoryFilterOpen());
+  }
+
+  setCategoryFilter(categoryId: string | null): void {
+    this.categoryFilter.set(categoryId);
+    this.categoryFilterOpen.set(false);
   }
 
   saveEdit(): void {

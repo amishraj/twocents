@@ -43,6 +43,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/savings/savings.component').then((m) => m.SavingsComponent)
       },
       {
+        path: 'banks',
+        loadComponent: () => import('./features/banks/banks.component').then((m) => m.BanksComponent)
+      },
+      {
         path: 'household',
         canActivate: [householdGuard],
         loadComponent: () =>
@@ -61,6 +65,25 @@ export const routes: Routes = [
         path: 'admin',
         canActivate: [adminGuard],
         loadComponent: () => import('./features/admin/admin.component').then((m) => m.AdminComponent)
+      },
+      {
+        path: 'splitwise',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./features/splitwise/splitwise.component').then((m) => m.SplitwiseComponent)
+          },
+          {
+            path: 'callback',
+            loadComponent: () =>
+              import('./features/splitwise/splitwise-callback.component').then((m) => m.SplitwiseCallbackComponent)
+          },
+          {
+            path: 'review',
+            loadComponent: () =>
+              import('./features/splitwise-review/splitwise-review.component').then((m) => m.SplitwiseReviewComponent)
+          }
+        ]
       },
       {
         path: '',

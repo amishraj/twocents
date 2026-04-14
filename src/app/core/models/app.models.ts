@@ -121,6 +121,15 @@ export interface HouseholdChangeRequest {
   decidedAt?: string;
 }
 
+export interface AdditionalIncomeEntry {
+  id: string;
+  userId: string;
+  householdId: string;
+  source: string;
+  amount: number;
+  date: string;
+}
+
 export interface AuthSession {
   userId: string;
   token: string;

@@ -14,7 +14,7 @@ import {
   signInWithPopup,
   signOut
 } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
 import { AuthSession, User } from '../models/app.models';
 import { AppStateService } from './app-state.service';
 import { FirebaseClientService } from './firebase-client.service';
@@ -287,6 +287,38 @@ export class AuthService {
     this.clearAllLocalData();
     this.clearSession();
     void this.router.navigate(['/auth']);
+  }
+
+  async adminNukeAllBankConnections(): Promise<{ connections: number; accounts: number; issues: number }> {
+    if (!this.isAdminUser()) {
+      throw new Error('Not authorized to nuke banking connections.');
+    }
+
+    const markDeletedInGroup = async (groupName: string): Promise<number> => {
+      const snapshot = await getDocs(collectionGroup(this.firebase.firestore, groupName));
+      for (const item of snapshot.docs) {
+        await setDoc(item.ref, {
+          deleted: true,
+          deletedAt: new Date().toISOString(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+      return snapshot.size;
+    };
+
+    const [connections, accounts, issues] = await Promise.all([
+      markDeletedInGroup('bankConnections'),
+      markDeletedInGroup('bankAccounts'),
+      markDeletedInGroup('bankIssues')
+    ]);
+
+    await setDoc(doc(this.firebase.firestore, 'adminFlags', 'bankingReset'), {
+      resetAt: new Date().toISOString(),
+      resetByUserId: this.getActiveUser()?.id ?? '',
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    return { connections, accounts, issues };
   }
 
   private clearAllLocalData(): void {

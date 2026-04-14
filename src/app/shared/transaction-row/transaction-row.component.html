@@ -1,0 +1,55 @@
+<div class="tx-row">
+  <div class="tx-left">
+    <div class="tx-title">
+      {{ transaction.title }}
+      @if (transaction.recurring) {
+        <span class="tx-label tx-recurring">Recurring</span>
+      }
+      @if (isFuture()) {
+        <span class="tx-label tx-coming-up">Coming up</span>
+      }
+      @if (isToday() && !isFuture()) {
+        <span class="tx-label tx-today">Today</span>
+      }
+    </div>
+    <p class="tx-meta">
+      @if (dateLeft) {
+        {{ transaction.date | date: 'MMM d, y' }}
+        &middot;
+      }
+      @if (showCategory) {
+        {{ getCategoryName() }}
+        &middot;
+      }
+      @if (showPaidBy && paidByName) {
+        Paid by {{ paidByName }}
+        &middot;
+      }
+      @if (showScope) {
+        {{ transaction.scope }}
+      }
+    </p>
+  </div>
+  <div class="tx-right">
+    @if (!dateLeft) {
+      <span class="tx-date">{{ transaction.date | date: 'MMM d' }}</span>
+    }
+    <span class="tx-amount">${{ transaction.amount | number: '1.2-2' }}</span>
+    @if (showEditButton) {
+      @if (editAsLink) {
+        <a class="icon-btn" [routerLink]="'/transactions'" [queryParams]="{ edit: transaction.id }" aria-label="Edit">
+          <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </a>
+      } @else {
+        <button type="button" class="icon-btn" (click)="onEdit()" aria-label="Edit">
+          <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      }
+    }
+    @if (showDeleteButton) {
+      <button type="button" class="icon-btn danger" (click)="onDelete()" aria-label="Delete">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    }
+  </div>
+</div>

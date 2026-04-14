@@ -1,0 +1,130 @@
+<div class="splitwise-page">
+  <header class="page-header">
+    <h1>Splitwise</h1>
+    <p class="subtitle">Import expenses from Splitwise</p>
+  </header>
+
+  <section class="connect-section" *ngIf="!isConnected()">
+    <div class="connect-card">
+      <div class="connect-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </div>
+      <h2>Connect to Splitwise</h2>
+      <p>Link your Splitwise account to import expenses directly into TwoCents.</p>
+      <ul class="features-list">
+        <li>One-click connection</li>
+        <li>Your data stays private</li>
+        <li>Import any date range</li>
+        <li>Review before importing</li>
+      </ul>
+      <button type="button" class="primary-action connect-btn" (click)="connect()">
+        Connect Splitwise
+      </button>
+    </div>
+  </section>
+
+  <ng-container *ngIf="isConnected()">
+    <section class="connection-status">
+      <div class="status-card">
+        <div class="status-avatar">
+          {{ connection()?.splitwiseUser?.first_name?.charAt(0) }}{{ connection()?.splitwiseUser?.last_name?.charAt(0) }}
+        </div>
+        <div class="status-info">
+          <p class="status-label">Connected as</p>
+          <p class="status-name">{{ connection()?.splitwiseUser?.first_name }} {{ connection()?.splitwiseUser?.last_name }}</p>
+          <p class="status-meta">Connected {{ connection()?.connectedAt | date:'mediumDate' }}</p>
+        </div>
+        <button type="button" class="ghost disconnect-btn" (click)="disconnect()">Disconnect</button>
+      </div>
+    </section>
+
+    <div class="loading-state" *ngIf="loading()">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+
+    <ng-container *ngIf="!loading()">
+      <section class="filters-section">
+        <h2>Filter Expenses</h2>
+        
+        <div class="date-filters">
+          <div class="filter-group">
+            <label>From Date</label>
+            <input type="date" [ngModel]="datedAfter()" (ngModelChange)="datedAfter.set($event)" />
+          </div>
+          <div class="filter-group">
+            <label>To Date</label>
+            <input type="date" [ngModel]="datedBefore()" (ngModelChange)="datedBefore.set($event)" />
+          </div>
+        </div>
+
+        <div class="source-filters">
+          <div class="filter-group">
+            <div class="filter-header">
+              <label>Groups ({{ selectedGroups().length }}/{{ groups().length }})</label>
+              <button type="button" class="text-btn" (click)="selectAllGroups()">All</button>
+            </div>
+            <div class="filter-list" *ngIf="groups().length > 0">
+              <label class="filter-item" *ngFor="let group of groups()">
+                <input
+                  type="checkbox"
+                  [checked]="selectedGroups().includes(group.id)"
+                  (change)="toggleGroup(group.id)"
+                />
+                <span>{{ group.name }}</span>
+              </label>
+            </div>
+            <p class="empty-text" *ngIf="groups().length === 0">No groups found</p>
+          </div>
+
+          <div class="filter-group">
+            <div class="filter-header">
+              <label>Direct Friends ({{ selectedFriends().length }}/{{ friends().length }})</label>
+              <button type="button" class="text-btn" (click)="selectAllFriends()">All</button>
+            </div>
+            <div class="filter-list" *ngIf="friends().length > 0">
+              <label class="filter-item" *ngFor="let friend of friends()">
+                <input
+                  type="checkbox"
+                  [checked]="selectedFriends().includes(friend.id)"
+                  (change)="toggleFriend(friend.id)"
+                />
+                <span>{{ friend.first_name }} {{ friend.last_name }}</span>
+              </label>
+            </div>
+            <p class="empty-text" *ngIf="friends().length === 0">No direct friends</p>
+          </div>
+        </div>
+
+        <div class="filter-actions">
+          <button type="button" class="ghost" (click)="clearFilters()">Clear Filters</button>
+        </div>
+      </section>
+
+      <section class="fetch-section">
+        <button 
+          type="button" 
+          class="primary-action fetch-btn" 
+          (click)="fetchExpenses()"
+          [disabled]="loading()"
+        >
+          Find Expenses
+        </button>
+        
+        <div class="fetch-result" *ngIf="fetchedExpenses() > 0">
+          <p>Found <strong>{{ fetchedExpenses() }}</strong> expenses</p>
+          <button type="button" class="primary-action" (click)="goToReview()">Review & Import</button>
+        </div>
+      </section>
+    </ng-container>
+  </ng-container>
+
+  <div class="error-toast" *ngIf="error()">
+    <p>{{ error() }}</p>
+  </div>
+</div>

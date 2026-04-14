@@ -23,98 +23,83 @@
     </div>
   </div>
 
-  <div class="grid">
-
-    <!-- ── Household Category Spend ── -->
-    <section class="card spend-card">
-      <div class="card-header">
-        <h3>Household category spend</h3>
-        <span class="muted">{{ household()?.name || 'Household' }}</span>
+  <!-- ── Household Category Spend ── -->
+  <section class="card spend-card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <h3>Category spend</h3>
+        @if (hasCategoryFilter) {
+          <button type="button" class="clear-filter-btn" (click)="clearCategoryFilter()">Clear all</button>
+        }
       </div>
+      <span class="muted">{{ household()?.name || 'Household' }}</span>
+    </div>
 
-      <div class="pie-container">
-        <!-- Canvas is always in the DOM so ViewChild can reference it -->
-        <div class="pie-wrap" [class.no-data]="categorySpend().length === 0">
-          <canvas #spendChart></canvas>
-          @if (categorySpend().length > 0) {
-            <div class="pie-center">
-              <span class="pie-total-label">Total</span>
-              <span class="pie-total-amount">${{ totalSpend() | number: '1.0-0' }}</span>
+    @if (categorySpend().length > 0) {
+      <div class="spend-body">
+        <div class="spend-chart-wrap">
+          <canvas #spendChartCanvas></canvas>
+          <div class="spend-center">
+            <span class="spend-center-label">Total</span>
+            <span class="spend-center-amount">${{ totalSpend() | number: '1.0-0' }}</span>
+          </div>
+        </div>
+
+        <div class="spend-legend">
+          @for (item of categorySpend(); track item.category?.id; let i = $index) {
+            <div class="spend-legend-row"
+                 (click)="toggleCategory(item.category!.id)"
+                 (mouseenter)="spendChart?.setActiveElements([{ datasetIndex: 0, index: i }])"
+                 (mouseleave)="spendChart?.setActiveElements([])"
+                 [class.is-selected]="isCategorySelected(item.category!.id)">
+              <span class="spend-legend-bar" [style.background]="item.category?.color"></span>
+              <span class="spend-legend-name">{{ item.category?.name }}</span>
+              <span class="spend-legend-pct">
+                {{ totalSpend() > 0 ? (item.amount / totalSpend() * 100 | number: '1.0-0') : 0 }}%
+              </span>
+              <span class="spend-legend-amt">${{ item.amount | number: '1.0-0' }}</span>
             </div>
           }
         </div>
-
-        @if (categorySpend().length > 0) {
-          <div class="pie-legend">
-            @for (item of categorySpend(); track item.category?.id) {
-              <div class="legend-row">
-                <span class="legend-dot" [style.background]="item.category?.color"></span>
-                <span class="legend-name">{{ item.category?.name }}</span>
-                <span class="legend-pct">
-                  {{ totalSpend() > 0 ? (item.amount / totalSpend() * 100 | number: '1.0-0') : 0 }}%
-                </span>
-                <span class="legend-amt">${{ item.amount | number: '1.0-0' }}</span>
-              </div>
-            }
-          </div>
-        } @else {
-          <p class="empty">No spend yet. Add your first expense.</p>
-        }
       </div>
-    </section>
-
-    <!-- ── Budget Health ── -->
-    <section class="card">
-      <div class="card-header">
-        <h3>Budget health</h3>
-        <a routerLink="/budgets">Manage</a>
+    } @else {
+      <div class="empty-state">
+        <p>No spending data yet. Add your first expense to see breakdowns here.</p>
       </div>
+    }
+  </section>
 
-      <div class="gauge-grid">
+  <!-- ── Budget Health ── -->
+  <section class="card">
+    <div class="card-header">
+      <h3>Budget health</h3>
+      <a routerLink="/budgets">Manage</a>
+    </div>
+
+    @if (budgetProgress().length > 0) {
+      <div class="budget-grid">
         @for (item of budgetProgress(); track item.budget.id) {
-          <div class="gauge-item">
-            <!-- Semicircle gauge: starts bottom-left, arcs over the top to bottom-right.
-                 stroke-dashoffset drives how much of the arc is filled. -->
-            <svg viewBox="0 0 120 70" class="gauge-svg"
-                 [attr.aria-label]="item.categoryName + ': ' + item.percent + '%'">
-              <!-- Track -->
-              <path
-                d="M 10,65 A 50,50 0 0,1 110,65"
-                fill="none"
-                stroke="#e2e8f0"
-                stroke-width="9"
-                stroke-linecap="round"
-              />
-              <!-- Progress arc -->
-              <path
-                d="M 10,65 A 50,50 0 0,1 110,65"
-                fill="none"
-                [attr.stroke]="getHealthColor(item.percent, item.color)"
-                stroke-width="9"
-                stroke-linecap="round"
-                [attr.stroke-dasharray]="arcLength"
-                [attr.stroke-dashoffset]="getArcOffset(item.percent)"
-                class="gauge-arc"
-              />
-              <!-- Percent label -->
-              <text x="60" y="62" text-anchor="middle" class="gauge-pct">{{ item.percent }}%</text>
-            </svg>
-
-            <div class="gauge-name">
-              <span class="dot" [style.background]="item.color"></span>
-              {{ item.categoryName }}
+          <div class="budget-gauge-card">
+            <div class="gauge-wrap">
+              <canvas #budgetGaugeCanvas></canvas>
+              <div class="gauge-center">
+                <span class="gauge-pct">{{ item.percent }}%</span>
+              </div>
+            </div>
+            <div class="gauge-label">
+              <span class="gauge-dot" [style.background]="item.color"></span>
+              <span class="gauge-name">{{ item.categoryName }}</span>
             </div>
             <div class="gauge-sub">${{ item.spent | number: '1.0-0' }} / ${{ item.budget.limit | number: '1.0-0' }}</div>
           </div>
         }
-
-        @if (budgetProgress().length === 0) {
-          <p class="empty">No budgets set. <a routerLink="/budgets">Add one</a></p>
-        }
       </div>
-    </section>
-
-  </div>
+    } @else {
+      <div class="empty-state">
+        <p>No budgets set. <a routerLink="/budgets">Add one</a> to track your spending limits.</p>
+      </div>
+    }
+  </section>
 
   <!-- ── Recent Transactions ── -->
   <section class="card transactions">
@@ -124,21 +109,12 @@
     </div>
     <div class="transaction-list">
       @for (transaction of recentTransactions(); track transaction.id) {
-        <div class="transaction-row">
-          <div>
-            <div class="title">{{ transaction.title }}</div>
-            <div class="meta">
-              {{ appState.categoryById(transaction.categoryId)?.name || 'Category' }} -
-              {{ transaction.scope }}
-            </div>
-          </div>
-          <div class="row-actions">
-            <div class="amount">${{ transaction.amount | number: '1.2-2' }}</div>
-            <a class="edit-link" [routerLink]="'/transactions'" [queryParams]="{ edit: transaction.id }" aria-label="Edit transaction">
-              <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            </a>
-          </div>
-        </div>
+        <app-tx-row
+          [transaction]="transaction"
+          [dateLeft]="true"
+          [showEditButton]="true"
+          [editAsLink]="true"
+        />
       }
       @if (recentTransactions().length === 0) {
         <p class="empty">No transactions yet.</p>

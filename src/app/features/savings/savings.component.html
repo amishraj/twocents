@@ -56,35 +56,133 @@
           <div class="goal-meta">
             <span class="status-chip" [ngClass]="goalTone(goal.id)">{{ goalStatus(goal.id) }}</span>
             <div class="amount">${{ goal.currentAmount | number: '1.0-0' }}</div>
-          </div>
-        </div>
-        <div class="progress">
-          <div class="track">
-            <div
-              class="fill"
-              [ngClass]="goalTone(goal.id)"
-              [style.width.%]="goalProgress(goal.id)"
-            ></div>
-          </div>
-          <div class="meta">
-            {{ goal.currentAmount | number: '1.0-0' }} of {{ goal.targetAmount | number: '1.0-0' }}
+            <div class="card-actions">
+              <button
+                class="icon-btn"
+                type="button"
+                (click)="editingGoalId() === goal.id ? cancelEditGoal() : startEditGoal(goal.id)"
+                [attr.aria-label]="editingGoalId() === goal.id ? 'Cancel edit goal' : 'Edit goal'"
+              >
+                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              @if (goal.currentAmount <= 0) {
+                <button
+                  class="icon-btn danger"
+                  type="button"
+                  (click)="requestRemoveGoal(goal.id)"
+                  aria-label="Delete savings goal"
+                >
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                </button>
+              } @else {
+                <div class="delete-lock-wrapper" tabindex="0" aria-label="Delete is locked while funds are non-zero">
+                  <span class="delete-locked">
+                    <svg viewBox="0 0 24 24" fill="none"><rect x="6" y="10" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 10V8a3 3 0 1 1 6 0v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                    Delete
+                  </span>
+                  <span class="delete-lock-popover">Deleting is locked while funds are non-zero.</span>
+                </div>
+              }
+            </div>
           </div>
         </div>
 
-        <div class="contribution">
-          <label>Add amount toward this goal</label>
-          <div class="contribution-row">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              [value]="contributionInput()[goal.id] || 0"
-              (input)="setContribution(goal.id, $any($event.target).value)"
-            />
-            <button class="primary" type="button" (click)="addContribution(goal.id)">Add</button>
+        @if (editingGoalId() === goal.id) {
+          <form class="inline-editor" [formGroup]="editGoalForm" (ngSubmit)="saveGoalEdit(goal.id)">
+            <div class="split">
+              <div class="field">
+                <label>Goal name</label>
+                <input type="text" formControlName="name" />
+              </div>
+              <div class="field">
+                <label>Account</label>
+                <input type="text" formControlName="accountName" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Scope</label>
+              <select formControlName="scope">
+                @if (hasHousehold()) {
+                  <option value="shared">Shared</option>
+                }
+                <option value="personal">Personal</option>
+              </select>
+            </div>
+
+            <div class="field amount-editor">
+              <div class="amount-head">
+                <label>Current amount</label>
+                <span>${{ (editGoalForm.value.currentAmount ?? 0) | number: '1.0-2' }}</span>
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                formControlName="currentAmount"
+                (input)="setEditCurrentAmount($any($event.target).value)"
+              />
+            </div>
+
+            <div class="field amount-editor">
+              <div class="amount-head">
+                <label>Target amount</label>
+                <span>${{ (editGoalForm.value.targetAmount ?? 0) | number: '1.0-2' }}</span>
+              </div>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                formControlName="targetAmount"
+                (input)="setEditTargetAmount($any($event.target).value)"
+              />
+            </div>
+
+            <div class="editor-actions">
+              <button class="ghost" type="button" (click)="cancelEditGoal()">Cancel</button>
+              <button class="primary" type="submit">Save</button>
+            </div>
+          </form>
+        } @else {
+          <div class="progress">
+            <div class="track">
+              <div
+                class="fill"
+                [style.background]="goalProgressColor(goal.id)"
+                [style.width.%]="goalProgress(goal.id)"
+              ></div>
+            </div>
+            <div class="meta">
+              {{ goal.currentAmount | number: '1.0-0' }} of {{ goal.targetAmount | number: '1.0-0' }}
+            </div>
           </div>
-        </div>
+
+          <div class="contribution">
+            <label>Add amount toward this goal</label>
+            <div class="contribution-row">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                [value]="contributionInput()[goal.id] || 0"
+                (input)="setContribution(goal.id, $any($event.target).value)"
+              />
+              <button class="primary" type="button" (click)="addContribution(goal.id)">Add</button>
+            </div>
+          </div>
+        }
       </div>
     }
   </div>
+
+  @if (confirmDeleteGoalId()) {
+    <app-confirm-modal
+      title="Delete savings goal?"
+      message="This savings goal will be removed immediately."
+      confirmLabel="Delete"
+      [danger]="true"
+      (cancel)="cancelRemoveGoal()"
+      (confirm)="removeGoal()"
+    />
+  }
 </div>

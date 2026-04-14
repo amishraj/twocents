@@ -316,6 +316,14 @@
   color: var(--accent-dark);
 }
 
+.logout-link {
+  margin-top: 0.4rem;
+  border: 1px solid var(--border-subtle);
+  color: #b91c1c;
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  font-family: inherit;
+}
+
 .fab {
   position: fixed;
   right: 1.5rem;
