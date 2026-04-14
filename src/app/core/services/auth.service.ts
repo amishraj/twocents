@@ -86,7 +86,6 @@ export class AuthService {
       });
 
       await this.ensureUserProfile(authUser.uid, authUser.displayName ?? 'User', authUser.email ?? '');
-      await this.appState.ensureRecurringUpToDate();
     });
   }
 
@@ -332,7 +331,8 @@ export class AuthService {
       'bt_investments',
       'bt_invites',
       'bt_household_change_requests',
-      'bt_recurring_templates'
+      'bt_recurring_templates',
+      'bt_additional_income'
     ];
 
     for (const key of keys) {
@@ -401,5 +401,6 @@ export class AuthService {
   private clearSession(): void {
     this.sessionSignal.set(null);
     this.storage.removeItem(STORAGE_KEYS.auth);
+    this.clearAllLocalData();
   }
 }

@@ -49,25 +49,19 @@ export class AppStateService {
   private readonly firebase = inject(FirebaseClientService);
   private readonly toast = inject(ToastService);
 
-  private readonly usersSignal = signal<User[]>(this.storage.getItem(STORAGE_KEYS.users, []));
-  private readonly householdsSignal = signal<Household[]>(this.storage.getItem(STORAGE_KEYS.households, []));
-  private readonly categoriesSignal = signal<BudgetCategory[]>(this.storage.getItem(STORAGE_KEYS.categories, []));
-  private readonly budgetsSignal = signal<Budget[]>(this.storage.getItem(STORAGE_KEYS.budgets, []));
-  private readonly transactionsSignal = signal<Transaction[]>(this.storage.getItem(STORAGE_KEYS.transactions, []));
-  private readonly savingsSignal = signal<SavingsGoal[]>(this.storage.getItem(STORAGE_KEYS.savings, []));
-  private readonly investmentsSignal = signal<InvestmentEntry[]>(
-    this.storage.getItem(STORAGE_KEYS.investments, [])
-  );
-  private readonly invitesSignal = signal<Invite[]>(this.storage.getItem(STORAGE_KEYS.invites, []));
-  private readonly householdChangeRequestsSignal = signal<HouseholdChangeRequest[]>(
-    this.storage.getItem(STORAGE_KEYS.householdChangeRequests, [])
-  );
-  private readonly recurringTemplatesSignal = signal<RecurringTemplate[]>(
-    this.storage.getItem(STORAGE_KEYS.recurringTemplates, [])
-  );
-  private readonly additionalIncomeSignal = signal<AdditionalIncomeEntry[]>(
-    this.storage.getItem(STORAGE_KEYS.additionalIncome, [])
-  );
+  private readonly usersSignal = signal<User[]>([]);
+  private readonly householdsSignal = signal<Household[]>([]);
+  private readonly categoriesSignal = signal<BudgetCategory[]>([]);
+  private readonly budgetsSignal = signal<Budget[]>([]);
+  private readonly transactionsSignal = signal<Transaction[]>([]);
+  private readonly savingsSignal = signal<SavingsGoal[]>([]);
+  private readonly investmentsSignal = signal<InvestmentEntry[]>([]);
+  private readonly invitesSignal = signal<Invite[]>([]);
+  private readonly householdChangeRequestsSignal = signal<HouseholdChangeRequest[]>([]);
+  private readonly recurringTemplatesSignal = signal<RecurringTemplate[]>([]);
+  private readonly additionalIncomeSignal = signal<AdditionalIncomeEntry[]>([]);
+
+  private initialized = false;
 
   private readonly authUidSignal = signal<string | null>(null);
   private readonly unsubscribers: Unsubscribe[] = [];
@@ -101,9 +95,25 @@ export class AppStateService {
       }
 
       this.authUidSignal.set(authUser.uid);
+      this.loadFromLocalStorage();
       this.watchUser(authUser.uid);
       void this.flushPendingTransactionWrites();
     });
+  }
+
+  private loadFromLocalStorage(): void {
+    this.usersSignal.set(this.storage.getItem(STORAGE_KEYS.users, []));
+    this.householdsSignal.set(this.storage.getItem(STORAGE_KEYS.households, []));
+    this.categoriesSignal.set(this.storage.getItem(STORAGE_KEYS.categories, []));
+    this.budgetsSignal.set(this.storage.getItem(STORAGE_KEYS.budgets, []));
+    this.transactionsSignal.set(this.storage.getItem(STORAGE_KEYS.transactions, []));
+    this.savingsSignal.set(this.storage.getItem(STORAGE_KEYS.savings, []));
+    this.investmentsSignal.set(this.storage.getItem(STORAGE_KEYS.investments, []));
+    this.invitesSignal.set(this.storage.getItem(STORAGE_KEYS.invites, []));
+    this.householdChangeRequestsSignal.set(this.storage.getItem(STORAGE_KEYS.householdChangeRequests, []));
+    this.recurringTemplatesSignal.set(this.storage.getItem(STORAGE_KEYS.recurringTemplates, []));
+    this.additionalIncomeSignal.set(this.storage.getItem(STORAGE_KEYS.additionalIncome, []));
+    this.initialized = true;
   }
 
   updateUsers(users: User[]): void {
@@ -663,6 +673,16 @@ export class AppStateService {
     }
 
     this.cleanupHouseholdWatchers();
+
+    // When transitioning between scopes (not on first setup), wipe all in-memory
+    // signals and their localStorage mirrors before loading the new scope's data.
+    // This prevents stale recurring templates from a previous household or user
+    // from being processed by ensureRecurringUpToDate() and generating phantom
+    // transactions under the new context.
+    if (this.watchedScopeKey !== null) {
+      this.clearDataSignals();
+    }
+
     this.watchedScopeKey = scopeKey;
 
     if (householdId) {
@@ -673,6 +693,27 @@ export class AppStateService {
 
     this.watchPersonalCollections(uid);
     void this.flushPendingTransactionWrites();
+  }
+
+  private clearDataSignals(): void {
+    this.categoriesSignal.set([]);
+    this.budgetsSignal.set([]);
+    this.transactionsSignal.set([]);
+    this.savingsSignal.set([]);
+    this.investmentsSignal.set([]);
+    this.invitesSignal.set([]);
+    this.householdChangeRequestsSignal.set([]);
+    this.recurringTemplatesSignal.set([]);
+    this.additionalIncomeSignal.set([]);
+    this.storage.removeItem(STORAGE_KEYS.categories);
+    this.storage.removeItem(STORAGE_KEYS.budgets);
+    this.storage.removeItem(STORAGE_KEYS.transactions);
+    this.storage.removeItem(STORAGE_KEYS.savings);
+    this.storage.removeItem(STORAGE_KEYS.investments);
+    this.storage.removeItem(STORAGE_KEYS.invites);
+    this.storage.removeItem(STORAGE_KEYS.householdChangeRequests);
+    this.storage.removeItem(STORAGE_KEYS.recurringTemplates);
+    this.storage.removeItem(STORAGE_KEYS.additionalIncome);
   }
 
   private watchPersonalCollections(uid: string): void {
@@ -856,6 +897,29 @@ export class AppStateService {
   private cleanupWatchers(): void {
     this.cleanupHouseholdWatchers();
     this.watchedScopeKey = null;
+    this.usersSignal.set([]);
+    this.householdsSignal.set([]);
+    this.categoriesSignal.set([]);
+    this.budgetsSignal.set([]);
+    this.transactionsSignal.set([]);
+    this.savingsSignal.set([]);
+    this.investmentsSignal.set([]);
+    this.invitesSignal.set([]);
+    this.householdChangeRequestsSignal.set([]);
+    this.recurringTemplatesSignal.set([]);
+    this.additionalIncomeSignal.set([]);
+    this.storage.removeItem(STORAGE_KEYS.users);
+    this.storage.removeItem(STORAGE_KEYS.households);
+    this.storage.removeItem(STORAGE_KEYS.categories);
+    this.storage.removeItem(STORAGE_KEYS.budgets);
+    this.storage.removeItem(STORAGE_KEYS.transactions);
+    this.storage.removeItem(STORAGE_KEYS.savings);
+    this.storage.removeItem(STORAGE_KEYS.investments);
+    this.storage.removeItem(STORAGE_KEYS.invites);
+    this.storage.removeItem(STORAGE_KEYS.householdChangeRequests);
+    this.storage.removeItem(STORAGE_KEYS.recurringTemplates);
+    this.storage.removeItem(STORAGE_KEYS.additionalIncome);
+    this.initialized = false;
     while (this.unsubscribers.length) {
       const unsub = this.unsubscribers.pop();
       if (unsub) {
