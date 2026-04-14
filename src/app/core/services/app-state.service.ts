@@ -591,13 +591,14 @@ export class AppStateService {
     ) as CollectionReference<DocumentData>;
 
     const unsub = onSnapshot(transactionsRef, (snapshot) => {
-      const next = snapshot.docs
+      const raw = snapshot.docs
         .map((docRef) => ({ id: docRef.id, ...(docRef.data() as Omit<Transaction, 'id'>) }) as Transaction)
         .filter((item) => !(item as { deleted?: boolean }).deleted);
-      // Any recurring key that Firestore has confirmed can leave the inflight set
-      for (const tx of next) {
+      // Any recurring key Firestore has confirmed can leave the inflight set
+      for (const tx of raw) {
         if (tx.recurringKey) this.inflightRecurringKeys.delete(tx.recurringKey);
       }
+      const next = this.purgeDuplicateRecurring(raw);
       this.transactionsSignal.set(next);
       this.storage.setItem(STORAGE_KEYS.transactions, next);
       void this.ensureRecurringUpToDate();
@@ -643,17 +644,18 @@ export class AppStateService {
   }
 
   private publishScopedTransactions(): void {
-    const merged = [...this.householdTransactionsCache];
+    const raw = [...this.householdTransactionsCache];
     for (const transaction of this.personalFallbackTransactionsCache) {
-      if (!merged.some((item) => item.id === transaction.id)) {
-        merged.push(transaction);
+      if (!raw.some((item) => item.id === transaction.id)) {
+        raw.push(transaction);
       }
     }
 
     // Any recurring key confirmed in either path can leave the inflight set
-    for (const tx of merged) {
+    for (const tx of raw) {
       if (tx.recurringKey) this.inflightRecurringKeys.delete(tx.recurringKey);
     }
+    const merged = this.purgeDuplicateRecurring(raw);
     this.transactionsSignal.set(merged);
     this.storage.setItem(STORAGE_KEYS.transactions, merged);
     void this.ensureRecurringUpToDate();
@@ -911,6 +913,43 @@ export class AppStateService {
     this.storage.setItem(STORAGE_KEYS.savings, []);
     this.storage.setItem(STORAGE_KEYS.investments, []);
     this.storage.setItem(STORAGE_KEYS.recurringTemplates, []);
+  }
+
+  /**
+   * Removes duplicate recurring transactions from a snapshot result.
+   *
+   * Because of historical race conditions (now fixed), Firestore may contain
+   * several transactions sharing the same recurringKey. We keep the first one
+   * encountered (Firestore returns docs in a consistent order) and permanently
+   * delete the extras. This runs on every snapshot so the database self-heals
+   * without any one-off migration script.
+   */
+  private purgeDuplicateRecurring(transactions: Transaction[]): Transaction[] {
+    const seen = new Set<string>();
+    const keep: Transaction[] = [];
+    const purge: string[] = [];
+
+    for (const tx of transactions) {
+      if (!tx.recurringKey) {
+        keep.push(tx);
+        continue;
+      }
+      if (seen.has(tx.recurringKey)) {
+        purge.push(tx.id);
+      } else {
+        seen.add(tx.recurringKey);
+        keep.push(tx);
+      }
+    }
+
+    if (purge.length > 0) {
+      const now = new Date().toISOString();
+      for (const id of purge) {
+        void this.upsertTransactionDoc(id, { deleted: true, deletedAt: now });
+      }
+    }
+
+    return keep;
   }
 
   private cleanupWatchers(): void {
