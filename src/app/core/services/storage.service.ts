@@ -10,7 +10,10 @@ export class StorageService {
 
     try {
       return JSON.parse(raw) as T;
-    } catch {
+    } catch (err) {
+      // Corrupted localStorage shouldn't crash the app; warn so a tester can
+      // notice it landed without their data.
+      console.warn(`[StorageService] failed to parse localStorage key "${key}"`, err);
       return fallback;
     }
   }

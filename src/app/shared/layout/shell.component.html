@@ -1,140 +1,136 @@
 <div class="shell">
-  @if (colorPickerOpen()) {
-    <button class="theme-backdrop" type="button" (click)="closeColorPicker()" aria-label="Close theme picker"></button>
-  }
+  <!-- ── Desktop sidebar ── -->
+  <aside class="sidebar">
+    <a class="brand" routerLink="/dashboard">
+      <span class="logo">¢</span>
+      <span class="brand-text">
+        <span class="brand-name">TwoCents</span>
+        <span class="brand-sub">{{ household()?.name || 'Personal budget' }}</span>
+      </span>
+    </a>
 
-  <header class="topbar">
-    <button class="menu-btn mobile-only" type="button" (click)="openSidenav()" aria-label="Open menu">
-      <span></span>
-      <span></span>
-      <span></span>
+    <button type="button" class="btn btn-primary add-btn" (click)="openQuickAdd()">
+      <app-icon name="plus" />
+      Add transaction
     </button>
 
-    <div class="brand">
-      <div class="logo">B</div>
-      <div class="brand-text">
-        <span class="title">TwoCents</span>
-        <span class="subtitle">Household finance</span>
-      </div>
-    </div>
+    <nav class="nav">
+      @for (item of mainNav(); track item.route) {
+        <a class="nav-link" [routerLink]="item.route" routerLinkActive="active">
+          <app-icon [name]="item.icon" />
+          <span>{{ item.label }}</span>
+        </a>
+      }
+      <p class="nav-group">Connections</p>
+      @for (item of moreNav(); track item.route) {
+        <a class="nav-link" [routerLink]="item.route" routerLinkActive="active">
+          <app-icon [name]="item.icon" />
+          <span>{{ item.label }}</span>
+        </a>
+      }
+      @if (showAdminNav()) {
+        <a class="nav-link" routerLink="/admin" routerLinkActive="active">
+          <app-icon name="shield" />
+          <span>Admin</span>
+        </a>
+      }
+    </nav>
 
-    <div class="topbar-actions">
-      <div class="theme-control" aria-label="Theme color picker">
-        <button class="theme-trigger" type="button" (click)="toggleColorPicker()" aria-haspopup="dialog">
-          <span class="theme-preview" [style.background]="activeThemeColor()"></span>
-          <span>Theme</span>
-          <span class="chevron" [class.open]="colorPickerOpen()">▾</span>
-        </button>
-
-        @if (colorPickerOpen()) {
-          <div class="theme-popover" role="dialog" aria-label="Pick a theme color">
-            <p class="theme-title">Choose your vibe</p>
-            <div class="theme-grid">
-              @for (color of themeColors; track color) {
-                <button
-                  type="button"
-                  class="swatch"
-                  [class.active]="activeThemeColor() === color"
-                  [style.background]="color"
-                  (click)="setThemeColor(color)"
-                  [attr.aria-label]="'Set theme color ' + color"
-                ></button>
-              }
-            </div>
-            <label class="custom-color">
-              <span>Custom</span>
-              <input type="color" [value]="activeThemeColor()" (input)="setThemeColor($any($event.target).value)" />
-            </label>
-          </div>
+    <div class="sidebar-foot">
+      <div class="sync" [class.saving]="syncStatus() === 'saving'" [class.error]="syncStatus() === 'error'" aria-live="polite">
+        <span class="sync-dot"></span>
+        @switch (syncStatus()) {
+          @case ('saving') { Saving… }
+          @case ('error') { Saved on this device · retrying }
+          @default { All changes saved }
         }
       </div>
-      <button class="ghost" type="button" (click)="openQuickAdd()">Quick add</button>
-      <button class="ghost" type="button" (click)="signOut()">Sign out</button>
+      <a class="user-chip" routerLink="/profile">
+        <span class="avatar">{{ initials() }}</span>
+        <span class="user-text">
+          <span class="truncate">{{ user()?.name || 'Account' }}</span>
+          <span class="truncate faint tiny">{{ user()?.email }}</span>
+        </span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Mobile top bar ── -->
+  <header class="topbar">
+    <a class="brand compact" routerLink="/dashboard">
+      <span class="logo">¢</span>
+      <span class="brand-name">TwoCents</span>
+    </a>
+    <div class="topbar-right">
+      <span class="sync compact" [class.saving]="syncStatus() === 'saving'" [class.error]="syncStatus() === 'error'" [title]="syncStatus() === 'saved' ? 'All changes saved' : syncStatus() === 'saving' ? 'Saving' : 'Saved on this device, retrying'">
+        <span class="sync-dot"></span>
+      </span>
+      <a class="avatar" routerLink="/profile" aria-label="Settings">{{ initials() }}</a>
     </div>
   </header>
 
-  <nav class="desktop-nav">
-    @for (item of visibleNavItems(); track item.route) {
-      <button class="nav-link" type="button" [routerLink]="item.route" routerLinkActive="active">{{ item.label }}</button>
+  <main class="content">
+    <router-outlet />
+  </main>
+
+  <!-- ── Mobile tab bar ── -->
+  <nav class="tabbar" aria-label="Primary">
+    @for (item of tabNav(); track item.route) {
+      <a class="tab" [routerLink]="item.route" routerLinkActive="active">
+        <app-icon [name]="item.icon" size="22" />
+        <span>{{ item.label }}</span>
+      </a>
     }
-    @if (showAdminNav()) {
-      <button class="nav-link" type="button" routerLink="/admin" routerLinkActive="active">Admin</button>
-    }
+    <button type="button" class="tab" [class.active]="moreOpen()" (click)="moreOpen.set(true)">
+      <app-icon name="more-h" size="22" />
+      <span>More</span>
+    </button>
   </nav>
 
-  @if (sidenavOpen()) {
-    <button class="sidenav-overlay" type="button" (click)="closeSidenav()" aria-label="Close menu"></button>
+  <button class="fab" type="button" (click)="openQuickAdd()" aria-label="Add transaction">
+    <app-icon name="plus" size="26" />
+  </button>
+
+  @if (moreOpen()) {
+    <app-sheet title="More" (closed)="moreOpen.set(false)">
+      <div class="more-grid">
+        @for (item of moreSheetNav(); track item.route) {
+          <a class="more-item" [routerLink]="item.route" (click)="moreOpen.set(false)">
+            <app-icon [name]="item.icon" size="22" />
+            <span>{{ item.label }}</span>
+          </a>
+        }
+        @if (showAdminNav()) {
+          <a class="more-item" routerLink="/admin" (click)="moreOpen.set(false)">
+            <app-icon name="shield" size="22" />
+            <span>Admin</span>
+          </a>
+        }
+        <button type="button" class="more-item" (click)="signOut()">
+          <app-icon name="logout" size="22" />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </app-sheet>
   }
 
-  <aside class="sidenav" [class.open]="sidenavOpen()">
-    <div class="sidenav-head">
-      <p>Navigate</p>
-      <button class="menu-btn" type="button" (click)="closeSidenav()" aria-label="Close menu">
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
-    </div>
-    <nav class="sidenav-links">
-      @for (item of visibleNavItems(); track item.route) {
-        <button
-          class="sidenav-link"
-          type="button"
-          [routerLink]="item.route"
-          routerLinkActive="active"
-          (click)="closeSidenav()"
-        >
-          {{ item.label }}
-        </button>
-      }
-      @if (showAdminNav()) {
-        <button
-          class="sidenav-link"
-          type="button"
-          routerLink="/admin"
-          routerLinkActive="active"
-          (click)="closeSidenav()"
-        >
-          Admin
-        </button>
-      }
-
-      <button class="sidenav-link logout-link" type="button" (click)="signOut()">Sign out</button>
-    </nav>
-  </aside>
-
-  <div class="content">
-    <router-outlet />
-  </div>
-
-  @if (pendingInvite()) {
-    <div class="invite-overlay" role="dialog" aria-modal="true" aria-label="Household invite">
-      <div class="invite-modal">
-        <p class="invite-kicker">Household invite</p>
-        <h3>
-          Join{{ pendingInvite()?.householdName ? ' ' + pendingInvite()?.householdName : ' household' }}?
-        </h3>
-        <p>
-          Invite code: <strong>{{ pendingInvite()?.code }}</strong>
+  @if (pendingInvite(); as invite) {
+    <button class="sheet-overlay" type="button" aria-label="Dismiss" (click)="declineInvite()"></button>
+    <div class="sheet invite" role="dialog" aria-modal="true" aria-label="Household invite">
+      <div class="sheet-body stack">
+        <span class="chip accent">Household invite</span>
+        <h2>Join {{ invite.householdName || 'a household' }}?</h2>
+        <p class="muted">
+          You'll share budgets, savings goals and shared transactions with its members. Your personal entries stay yours.
         </p>
-        <p class="invite-meta">
-          Accept to request joining this household. If your current household has other members, they may need to approve your leave request first.
-        </p>
-        <div class="invite-actions">
-          <button type="button" class="ghost" (click)="declineInvite()">Decline</button>
-          <button type="button" class="primary-action" (click)="acceptInvite()">Accept</button>
+        <p class="small faint">Invite code <span class="tnum">{{ invite.code }}</span></p>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" (click)="declineInvite()">Not now</button>
+          <button type="button" class="btn btn-primary" (click)="acceptInvite()">Join household</button>
         </div>
       </div>
     </div>
   }
-
-  @if (inviteActionMessage) {
-    <p class="invite-toast">{{ inviteActionMessage }}</p>
-  }
-
-  <button class="fab" type="button" (click)="openQuickAdd()" aria-label="Add expense">
-    +
-  </button>
 
   <app-quick-add-expense />
   <app-toast />

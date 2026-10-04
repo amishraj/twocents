@@ -1,124 +1,307 @@
-<div class="dashboard">
-  <div class="hero">
+<div class="page">
+  <div class="page-header">
     <div>
-      <p class="eyebrow">Welcome {{ activeUser()?.name || 'back' }}</p>
-      <h1>Here is your spending snapshot</h1>
-      <p class="subtext">{{ household()?.name || 'Your household' }} - {{ ui.dashboardRange() }} view</p>
+      <h1>{{ firstName() ? 'Hi ' + firstName() : 'Overview' }}</h1>
+      <p class="subtitle">
+        {{ ui.rangeLabel() }}
+        @if (hasHousehold()) {
+          · {{ household()?.name }}
+        }
+      </p>
     </div>
-    <div class="range-toggle">
-      <button
-        type="button"
-        [class.active]="ui.dashboardRange() === 'week'"
-        (click)="setRange('week')"
-      >
-        Week
+    <div class="page-actions">
+      <button type="button" class="btn btn-ghost" (click)="addIncome()">
+        <app-icon name="arrow-down-left" /> Income
       </button>
-      <button
-        type="button"
-        [class.active]="ui.dashboardRange() === 'month'"
-        (click)="setRange('month')"
-      >
-        Month
+      <button type="button" class="btn btn-primary" (click)="addExpense()">
+        <app-icon name="plus" /> Expense
       </button>
     </div>
   </div>
 
-  <!-- ── Household Category Spend ── -->
-  <section class="card spend-card">
-    <div class="card-header">
-      <div class="card-header-left">
-        <h3>Category spend</h3>
-        @if (hasCategoryFilter) {
-          <button type="button" class="clear-filter-btn" (click)="clearCategoryFilter()">Clear all</button>
+  <!-- ── Period & scope controls ── -->
+  <div class="controls card tight">
+    <div class="period">
+      <button type="button" class="btn-icon" (click)="ui.shiftPeriod(-1)" aria-label="Previous period">
+        <app-icon name="chevron-left" />
+      </button>
+      <span class="period-label">{{ ui.rangeLabel() }}</span>
+      <button type="button" class="btn-icon" (click)="ui.shiftPeriod(1)" aria-label="Next period">
+        <app-icon name="chevron-right" />
+      </button>
+      @if (!ui.isCurrentPeriod()) {
+        <button type="button" class="btn btn-sm btn-quiet" (click)="ui.jumpToToday()">Today</button>
+      }
+    </div>
+    <div class="controls-right">
+      @if (hasHousehold()) {
+        <div class="segmented" aria-label="Scope">
+          <button type="button" [class.active]="scope() === 'all'" (click)="setScope('all')">All</button>
+          <button type="button" [class.active]="scope() === 'shared'" (click)="setScope('shared')">Shared</button>
+          <button type="button" [class.active]="scope() === 'personal'" (click)="setScope('personal')">Personal</button>
+        </div>
+      }
+      <div class="segmented" aria-label="Period">
+        <button type="button" [class.active]="ui.periodMode() === 'week'" (click)="ui.setPeriodMode('week')">Week</button>
+        <button type="button" [class.active]="ui.periodMode() === 'month'" (click)="ui.setPeriodMode('month')">Month</button>
+        <button type="button" [class.active]="ui.periodMode() === 'custom'" (click)="ui.setPeriodMode('custom')">Custom</button>
+      </div>
+    </div>
+    @if (ui.periodMode() === 'custom') {
+      <div class="custom-range">
+        <input type="date" [value]="range().start" (change)="onCustomStart($event)" aria-label="From" />
+        <span class="faint">to</span>
+        <input type="date" [value]="range().end" (change)="onCustomEnd($event)" aria-label="To" />
+      </div>
+    }
+  </div>
+
+  @if (isEmpty()) {
+    <!-- ── First run ── -->
+    <section class="card welcome">
+      <div class="welcome-text">
+        <span class="chip accent">Getting started</span>
+        <h2>Let's get your money on the page</h2>
+        <p class="muted">
+          TwoCents works from the transactions you log. Add a few, set a budget or two, and this page turns into a live
+          picture of where your money goes.
+        </p>
+      </div>
+      <div class="welcome-steps">
+        <button type="button" class="step" (click)="addExpense()">
+          <span class="swatch" style="background: var(--accent)"><app-icon name="plus" size="18" /></span>
+          <span class="step-text"><strong>Log an expense</strong><span>Anything you've paid for recently.</span></span>
+        </button>
+        <a class="step" routerLink="/budgets">
+          <span class="swatch" style="background: var(--pos)"><app-icon name="target" size="18" /></span>
+          <span class="step-text"><strong>Set a budget</strong><span>A monthly limit for a category.</span></span>
+        </a>
+        @if (!hasHousehold()) {
+          <a class="step" routerLink="/onboarding">
+            <span class="swatch" style="background: var(--warn)"><app-icon name="users" size="18" /></span>
+            <span class="step-text"><strong>Invite your partner</strong><span>Create a household to share budgets.</span></span>
+          </a>
+        } @else {
+          <button type="button" class="step" (click)="addIncome()">
+            <span class="swatch" style="background: var(--warn)"><app-icon name="arrow-down-left" size="18" /></span>
+            <span class="step-text"><strong>Log income</strong><span>Salary or anything coming in.</span></span>
+          </button>
         }
       </div>
-      <span class="muted">{{ household()?.name || 'Household' }}</span>
+    </section>
+  }
+
+  <!-- ── Headline numbers ── -->
+  <section class="stat-grid">
+    <div class="stat">
+      <span class="stat-label">Spent</span>
+      <span class="stat-value">{{ summary().spent | money:'none' }}</span>
+      @if (spentDelta() !== null) {
+        <span class="stat-delta" [class.up]="spentDelta()! > 0" [class.down]="spentDelta()! < 0">
+          {{ spentDelta()! > 0 ? '↑' : spentDelta()! < 0 ? '↓' : '' }} {{ spentDelta()! < 0 ? -spentDelta()! : spentDelta() }}% vs previous
+        </span>
+      } @else {
+        <span class="stat-delta">{{ summary().count }} transaction{{ summary().count === 1 ? '' : 's' }}</span>
+      }
     </div>
+    <div class="stat">
+      <span class="stat-label">Income</span>
+      <span class="stat-value pos">{{ summary().received | money:'none' }}</span>
+      <span class="stat-delta">{{ summary().previousReceived > 0 ? (summary().previousReceived | money:'none') + ' previous' : 'Logged in this period' }}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Net</span>
+      <span class="stat-value" [class.pos]="summary().net > 0" [class.neg]="summary().net < 0">
+        {{ summary().net | money:'none':true }}
+      </span>
+      <span class="stat-delta">Income minus spending</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Everyday spend / day</span>
+      <span class="stat-value">{{ summary().dailyAverage | money:'none' }}</span>
+      @if (summary().projectedSpend !== null) {
+        <span class="stat-delta">On pace for {{ summary().projectedSpend | money:'none' }} this period</span>
+      } @else {
+        <span class="stat-delta">Excludes recurring bills</span>
+      }
+    </div>
+  </section>
 
-    @if (categorySpend().length > 0) {
-      <div class="spend-body">
-        <div class="spend-chart-wrap">
-          <canvas #spendChartCanvas></canvas>
-          <div class="spend-center">
-            <span class="spend-center-label">Total</span>
-            <span class="spend-center-amount">${{ totalSpend() | number: '1.0-0' }}</span>
-          </div>
-        </div>
+  <!-- ── Spending pace ── -->
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2>Spending pace</h2>
+        <span class="hint">Cumulative spend, compared with the previous period</span>
+      </div>
+      <div class="legend">
+        <span><i class="line solid"></i>This period</span>
+        <span><i class="line dashed"></i>Previous</span>
+      </div>
+    </div>
+    <div class="chart-wrap" [class.is-empty]="!trendHasData()">
+      <canvas #trendCanvas></canvas>
+      @if (!trendHasData()) {
+        <div class="chart-empty">No spending in this period yet.</div>
+      }
+    </div>
+  </section>
 
-        <div class="spend-legend">
-          @for (item of categorySpend(); track item.category?.id; let i = $index) {
-            <div class="spend-legend-row"
-                 (click)="toggleCategory(item.category!.id)"
-                 (mouseenter)="spendChart?.setActiveElements([{ datasetIndex: 0, index: i }])"
-                 (mouseleave)="spendChart?.setActiveElements([])"
-                 [class.is-selected]="isCategorySelected(item.category!.id)">
-              <span class="spend-legend-bar" [style.background]="item.category?.color"></span>
-              <span class="spend-legend-name">{{ item.category?.name }}</span>
-              <span class="spend-legend-pct">
-                {{ totalSpend() > 0 ? (item.amount / totalSpend() * 100 | number: '1.0-0') : 0 }}%
+  <div class="grid-2">
+    <!-- ── Categories ── -->
+    <section class="card flush">
+      <div class="card-header">
+        <h2>Where it went</h2>
+        <span class="hint">{{ summary().spent | money:'none' }} total</span>
+      </div>
+      @if (categories().length > 0) {
+        <div class="cat-list">
+          @for (item of visibleCategories(); track item.categoryId) {
+            <button type="button" class="cat-row" (click)="openCategory(item.categoryId)">
+              <span class="dot" [style.background]="item.category?.color ?? 'var(--text-3)'"></span>
+              <span class="cat-main">
+                <span class="cat-top">
+                  <span class="truncate">{{ item.category?.name ?? 'Uncategorized' }}</span>
+                  <span class="cat-amt">{{ item.amount | money:'none' }}</span>
+                </span>
+                <span class="cat-bar">
+                  <span class="cat-fill" [style.width.%]="topCategoryAmount() > 0 ? (item.amount / topCategoryAmount()) * 100 : 0" [style.background]="item.category?.color ?? 'var(--text-3)'"></span>
+                </span>
+                <span class="cat-sub">{{ (item.share * 100) | number:'1.0-0' }}% · {{ item.count }} transaction{{ item.count === 1 ? '' : 's' }}</span>
               </span>
-              <span class="spend-legend-amt">${{ item.amount | number: '1.0-0' }}</span>
+              <app-icon name="chevron-right" size="16" />
+            </button>
+          }
+        </div>
+        @if (categories().length > 6) {
+          <button type="button" class="link-btn more-link" (click)="showAllCategories.set(!showAllCategories())">
+            {{ showAllCategories() ? 'Show less' : 'Show all ' + categories().length + ' categories' }}
+          </button>
+        }
+      } @else {
+        <div class="empty compact">
+          @if (!loaded()) {
+            <span class="skeleton" style="width: 60%"></span>
+          } @else {
+            <p>No spending in this period.</p>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- ── Budgets ── -->
+    <section class="card flush">
+      <div class="card-header">
+        <div>
+          <h2>Budgets</h2>
+          @if (budgetCount() > 0) {
+            <span class="hint">
+              @if (budgetsOver() > 0) { {{ budgetsOver() }} over · }
+              @if (budgetsWarn() > 0) { {{ budgetsWarn() }} close · }
+              {{ budgetCount() - budgetsOver() - budgetsWarn() }} on track
+            </span>
+          }
+        </div>
+        <a routerLink="/budgets" class="card-link">{{ budgetCount() > 0 ? 'Manage' : 'Create' }}</a>
+      </div>
+      @if (budgets().length > 0) {
+        <div class="budget-list">
+          @for (item of budgets(); track item.budget.id) {
+            <button type="button" class="budget-row" (click)="openBudget(item.budget.id)">
+              <span class="budget-top">
+                <span class="budget-name">
+                  <span class="dot" [style.background]="item.category?.color ?? 'var(--text-3)'"></span>
+                  <span class="truncate">{{ item.category?.name ?? 'Category' }}</span>
+                  <span class="chip" [class.ok]="item.status === 'ok'" [class.warn]="item.status === 'warning'" [class.over]="item.status === 'over'">
+                    {{ item.status === 'over' ? 'Over' : item.status === 'warning' ? 'Close' : 'On track' }}
+                  </span>
+                </span>
+                <span class="budget-nums tnum">
+                  <strong>{{ item.spent | money:'none' }}</strong><span class="faint"> / {{ item.budget.limit | money:'none' }}</span>
+                </span>
+              </span>
+              <span class="progress thin">
+                <span class="progress-fill" [class.ok]="item.status === 'ok'" [class.warn]="item.status === 'warning'" [class.over]="item.status === 'over'" [style.width.%]="item.percent"></span>
+              </span>
+              <span class="budget-sub">
+                {{ item.budget.period === 'weekly' ? 'This week' : 'This month' }} ·
+                @if (item.remaining >= 0) {
+                  {{ item.remaining | money:'none' }} left
+                  @if (item.daysLeft > 0 && item.safePerDay > 0) { · {{ item.safePerDay | money:'none' }}/day }
+                } @else {
+                  <span class="neg">{{ -item.remaining | money:'none' }} over</span>
+                }
+              </span>
+            </button>
+          }
+        </div>
+      } @else {
+        <div class="empty compact">
+          <p>{{ budgetCount() > 0 ? 'No budgets match this scope.' : 'Set a limit for a category and track it here.' }}</p>
+          @if (budgetCount() === 0) {
+            <a routerLink="/budgets" class="btn btn-sm btn-ghost">Create a budget</a>
+          }
+        </div>
+      }
+    </section>
+  </div>
+
+  <div class="grid-2">
+    <!-- ── Upcoming ── -->
+    <section class="card flush">
+      <div class="card-header">
+        <div>
+          <h2>Coming up</h2>
+          <span class="hint">Recurring items due in the next month</span>
+        </div>
+        <a routerLink="/transactions" [queryParams]="{ view: 'recurring' }" class="card-link">Recurring</a>
+      </div>
+      @if (upcoming().length > 0) {
+        <div class="list">
+          @for (item of upcoming(); track item.template.id) {
+            <div class="list-row">
+              <span class="swatch small" [style.background]="item.template.type === 'income' ? 'var(--pos)' : (item.category?.color ?? 'var(--text-3)')">
+                <app-icon name="repeat" size="15" />
+              </span>
+              <div class="list-main">
+                <span class="list-title">{{ item.template.title }}</span>
+                <span class="list-meta">{{ dueLabel(item.daysUntil, item.dueDate) }} · {{ item.category?.name ?? 'Uncategorized' }}</span>
+              </div>
+              <span class="list-amount" [class.pos]="item.template.type === 'income'">
+                {{ item.template.type === 'income' ? '+' : '' }}{{ item.template.amount | money:'always' }}
+              </span>
             </div>
           }
         </div>
-      </div>
-    } @else {
-      <div class="empty-state">
-        <p>No spending data yet. Add your first expense to see breakdowns here.</p>
-      </div>
-    }
-  </section>
-
-  <!-- ── Budget Health ── -->
-  <section class="card">
-    <div class="card-header">
-      <h3>Budget health</h3>
-      <a routerLink="/budgets">Manage</a>
-    </div>
-
-    @if (budgetProgress().length > 0) {
-      <div class="budget-grid">
-        @for (item of budgetProgress(); track item.budget.id) {
-          <div class="budget-gauge-card">
-            <div class="gauge-wrap">
-              <canvas #budgetGaugeCanvas></canvas>
-              <div class="gauge-center">
-                <span class="gauge-pct">{{ item.percent }}%</span>
-              </div>
-            </div>
-            <div class="gauge-label">
-              <span class="gauge-dot" [style.background]="item.color"></span>
-              <span class="gauge-name">{{ item.categoryName }}</span>
-            </div>
-            <div class="gauge-sub">${{ item.spent | number: '1.0-0' }} / ${{ item.budget.limit | number: '1.0-0' }}</div>
-          </div>
-        }
-      </div>
-    } @else {
-      <div class="empty-state">
-        <p>No budgets set. <a routerLink="/budgets">Add one</a> to track your spending limits.</p>
-      </div>
-    }
-  </section>
-
-  <!-- ── Recent Transactions ── -->
-  <section class="card transactions">
-    <div class="card-header">
-      <h3>Recent transactions</h3>
-      <a routerLink="/transactions">View all</a>
-    </div>
-    <div class="transaction-list">
-      @for (transaction of recentTransactions(); track transaction.id) {
-        <app-tx-row
-          [transaction]="transaction"
-          [dateLeft]="true"
-          [showEditButton]="true"
-          [editAsLink]="true"
-        />
+      } @else {
+        <div class="empty compact">
+          <p>Nothing due in the next month. Turn on “Repeats monthly” when adding rent, salary or subscriptions.</p>
+        </div>
       }
-      @if (recentTransactions().length === 0) {
-        <p class="empty">No transactions yet.</p>
+    </section>
+
+    <!-- ── Recent ── -->
+    <section class="card flush">
+      <div class="card-header">
+        <h2>Recent activity</h2>
+        <a routerLink="/transactions" class="card-link">View all</a>
+      </div>
+      @if (recent().length > 0) {
+        <div class="list">
+          @for (tx of recent(); track tx.id) {
+            <app-tx-row [transaction]="tx" [showDate]="true" [showScope]="hasHousehold()" [clickable]="true" (selected)="openTransaction($event)" />
+          }
+        </div>
+      } @else {
+        <div class="empty compact">
+          @if (!loaded()) {
+            <span class="skeleton" style="width: 70%"></span>
+            <span class="skeleton" style="width: 50%"></span>
+          } @else {
+            <p>No transactions yet.</p>
+          }
+        </div>
       }
-    </div>
-  </section>
+    </section>
+  </div>
 </div>

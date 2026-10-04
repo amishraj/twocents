@@ -3,14 +3,18 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { StorageService } from './storage.service';
 import { AuthService } from './auth.service';
 import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 const SPLITWISE_CONFIG = {
-  clientId: 'ArJ0dxQTlRhtq3dqp5T0G7eGXvcCzas2i2KNrat5',
-  clientSecret: 'tNRFj9CB0Jeh9LGXfMaEa914BYWfB6Tzq96GIqKe',
+  // Only the authorize step is a browser redirect (public clientId + redirectUri).
+  // Everything else (token exchange, API reads) goes through the same-origin
+  // Cloud Function proxy — Splitwise sends no CORS headers, so direct browser
+  // calls are impossible, and the client secret must stay server-side.
+  clientId: environment.splitwise.clientId,
+  redirectUri: environment.splitwise.redirectUri,
   authorizeUrl: 'https://secure.splitwise.com/oauth/authorize',
-  tokenUrl: 'https://secure.splitwise.com/oauth/token',
-  apiBaseUrl: 'https://secure.splitwise.com/api/v3.0',
-  redirectUri: 'https://two-cents-budget-tracker.web.app/#/splitwise/callback'
+  tokenUrl: `${environment.splitwise.proxyBaseUrl}/token`,
+  apiBaseUrl: `${environment.splitwise.proxyBaseUrl}/api`
 };
 
 export interface SplitwiseConnection {
@@ -193,26 +197,22 @@ export class SplitwiseService {
     this.error.set(null);
 
     try {
-      console.log('[Splitwise] Exchanging code for token...');
-      const params = new URLSearchParams({
-        client_id: SPLITWISE_CONFIG.clientId,
-        client_secret: SPLITWISE_CONFIG.clientSecret,
-        code,
-        grant_type: 'authorization_code',
-        redirect_uri: SPLITWISE_CONFIG.redirectUri
-      });
-
+      console.log('[Splitwise] Exchanging code for token via proxy...');
+      // The proxy adds client_id/client_secret/redirect_uri server-side; we only
+      // hand it the authorization code.
       const response = await firstValueFrom(
-        this.http.post<{ access_token: string }>(
+        this.http.post<{ access_token?: string; error?: string }>(
           SPLITWISE_CONFIG.tokenUrl,
-          params.toString(),
+          { code },
           {
-            headers: new HttpHeaders({
-              'Content-Type': 'application/x-www-form-urlencoded'
-            })
+            headers: new HttpHeaders({ 'Content-Type': 'application/json' })
           }
         )
       );
+
+      if (!response.access_token) {
+        throw new Error(response.error || 'no_access_token');
+      }
 
       console.log('[Splitwise] Token exchange successful, fetching user info...');
       const user = await this.getCurrentUser(response.access_token);
@@ -274,7 +274,8 @@ export class SplitwiseService {
     try {
       const response = await firstValueFrom(
         this.http.get<{ categories: SplitwiseCategory[] }>(
-          `${SPLITWISE_CONFIG.apiBaseUrl}/get_categories`
+          `${SPLITWISE_CONFIG.apiBaseUrl}/get_categories`,
+          { headers: this.getHeaders() }
         )
       );
       this.categories.set(response.categories);
@@ -375,7 +376,7 @@ export class SplitwiseService {
     this.storage.setItem(this.mappingStorageKey, mappings);
   }
 
-  getTwoCentsCategoryMapping(splitwiseCategoryId: number, splitwiseCategoryName: string): string | null {
+  getTwoCentsCategoryMapping(splitwiseCategoryId: number, _splitwiseCategoryName: string): string | null {
     const mappings = this.getMappings();
     const mapping = mappings.find(m => m.splitwiseCategoryId === splitwiseCategoryId);
 

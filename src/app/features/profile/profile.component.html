@@ -1,155 +1,195 @@
-<div class="page">
+<div class="page narrow">
   <div class="page-header">
     <div>
-      <h1>Profile & household</h1>
-      <p>Manage personal details and shared household settings.</p>
+      <h1>Settings</h1>
+      <p class="subtitle">Your account, how things are displayed, and your data.</p>
     </div>
-    <a routerLink="/investments" class="ghost-link">Go to investments</a>
+    <button type="button" class="btn btn-ghost" (click)="signOut()"><app-icon name="logout" /> Sign out</button>
   </div>
 
-  @if (isAdmin()) {
-    <section class="card admin-zone">
-      <div class="admin-head">
-        <div>
-          <h2>Admin — Reset data</h2>
-          <p class="meta">Only visible to you. Wipes all transactions, budgets, categories, savings, investments and recurring templates across the project.</p>
+  <!-- ── Account ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2>Account</h2>
+    </div>
+    <form class="form" [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+      <div class="field-row">
+        <div class="field">
+          <label for="p-name">Name</label>
+          <input id="p-name" type="text" formControlName="name" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="p-email">Email</label>
+          <input id="p-email" type="email" [value]="user()?.email ?? ''" disabled />
+          <span class="hint">Used to sign in. Can't be changed here yet.</span>
         </div>
       </div>
-      @if (confirmReset()) {
-        <div class="confirm-row">
-          <span>This cannot be undone. Are you absolutely sure?</span>
-          <button type="button" class="ghost" (click)="cancelReset()">Cancel</button>
-          <button type="button" class="danger-btn" (click)="executeReset()">Yes, wipe everything</button>
+      <div class="field">
+        <label for="p-income">Expected monthly income</label>
+        <div class="amount-field">
+          <span class="prefix">{{ currency.symbol() }}</span>
+          <input id="p-income" type="number" inputmode="decimal" formControlName="incomeMonthly" min="0" step="1" />
         </div>
-      } @else {
-        <button type="button" class="danger-btn" (click)="requestReset()">Reset all data</button>
-      }
+        <span class="hint">A planning number. It's used for your household's fair-share split and spend-of-income view. Actual income is whatever you log as income transactions.</span>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── Display ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2>Display</h2>
+    </div>
+    <div class="stack settings">
+      <div class="setting">
+        <div class="setting-text">
+          <span>Currency</span>
+          <span>
+            @if (hasHousehold() && !canEditCurrency()) {
+              Set by your household's owner.
+            } @else if (hasHousehold()) {
+              Applies to the whole household.
+            } @else {
+              How amounts are formatted everywhere.
+            }
+          </span>
+        </div>
+        <select class="input compact" [value]="currency.code()" (change)="setCurrency($event)" [disabled]="!canEditCurrency()" aria-label="Currency">
+          @for (code of currencies; track code) {
+            <option [value]="code">{{ code }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span>Week starts on</span>
+          <span>Affects weekly budgets and the weekly overview.</span>
+        </div>
+        <div class="segmented">
+          <button type="button" [class.active]="weekStartsOn() === 1" (click)="setWeekStart(1)">Monday</button>
+          <button type="button" [class.active]="weekStartsOn() === 0" (click)="setWeekStart(0)">Sunday</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span>Appearance</span>
+          <span>Remembered on this device.</span>
+        </div>
+        <div class="segmented">
+          <button type="button" [class.active]="theme.mode() === 'system'" (click)="setTheme('system')">Auto</button>
+          <button type="button" [class.active]="theme.mode() === 'light'" (click)="setTheme('light')"><app-icon name="sun" size="15" /> Light</button>
+          <button type="button" [class.active]="theme.mode() === 'dark'" (click)="setTheme('dark')"><app-icon name="moon" size="15" /> Dark</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span>Accent color</span>
+          <span>Buttons, links and highlights.</span>
+        </div>
+        <div class="accents">
+          @for (color of accents; track color) {
+            <button type="button" class="accent" [class.active]="accent() === color" [style.background]="color" (click)="setAccent(color)" [attr.aria-label]="'Accent ' + color"></button>
+          }
+          <label class="accent custom" title="Custom color">
+            <input type="color" [value]="accent()" (input)="onCustomAccent($event)" aria-label="Custom accent color" />
+            <app-icon name="plus" size="14" />
+          </label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Household ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2>Household</h2>
+    </div>
+    @if (household(); as h) {
+      <div class="spread">
+        <div>
+          <strong>{{ h.name || 'Unnamed household' }}</strong>
+          <p class="small muted">{{ h.members.length }} member{{ h.members.length === 1 ? '' : 's' }} · {{ h.currency }}</p>
+        </div>
+        <a routerLink="/household" class="btn btn-ghost">Open</a>
+      </div>
+    } @else {
+      <div class="spread">
+        <div>
+          <strong>Personal mode</strong>
+          <p class="small muted">Create a household to share budgets and expenses with a partner.</p>
+        </div>
+        <a routerLink="/onboarding" class="btn btn-ghost">Create or join</a>
+      </div>
+    }
+  </section>
+
+  <!-- ── Data ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2>Your data</h2>
+      <span class="hint">{{ counts().transactions }} transactions · {{ counts().budgets }} budgets · {{ counts().goals }} goals</span>
+    </div>
+    <div class="stack settings">
+      <div class="setting">
+        <div class="setting-text">
+          <span>Export everything</span>
+          <span>A JSON file with your transactions, budgets, goals and settings.</span>
+        </div>
+        <button type="button" class="btn btn-ghost" (click)="exportData()"><app-icon name="download" /> Export</button>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <span>Delete account</span>
+          <span>Removes your sign-in and personal data. Export first if you want a copy.</span>
+        </div>
+        <button type="button" class="btn btn-danger" (click)="askDeleteAccount()" [disabled]="deleting()">{{ deleting() ? 'Deleting…' : 'Delete…' }}</button>
+      </div>
+    </div>
+    <p class="tiny faint legal"><a routerLink="/terms">Terms</a> · <a routerLink="/privacy">Privacy</a></p>
+  </section>
+
+  @if (isAdmin()) {
+    <section class="card admin">
+      <div class="card-header">
+        <h2>Admin</h2>
+        <span class="chip warn">Only you see this</span>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <span>Reset all data</span>
+          <span>Soft-deletes transactions, budgets, categories, savings, investments and recurring series in the current scope.</span>
+        </div>
+        <button type="button" class="btn btn-danger" (click)="confirmReset.set(true)">Reset</button>
+      </div>
+      <a routerLink="/admin" class="link-btn small">More admin tools</a>
     </section>
   }
 
-  <div class="grid">
-    <section class="card">
-      <h2>Profile</h2>
-      <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" class="form">
-        <div class="field">
-          <label>Name</label>
-          <input type="text" formControlName="name" />
-        </div>
-        <div class="field">
-          <label>Email</label>
-          <input type="email" [value]="user()?.email ?? ''" disabled class="disabled-input" />
-          <p class="field-help">Email changes coming soon.</p>
-        </div>
-        <div class="field">
-          <label>Monthly income</label>
-          <input type="number" formControlName="incomeMonthly" min="0" />
-        </div>
-        <button class="primary" type="submit">Save profile</button>
-      </form>
-    </section>
-
-    <section class="card">
-      <h2>Household</h2>
-
-      @if (!hasHousehold()) {
-        <div class="locked-household">
-          <p class="meta">Household features are locked while you are in personal-only mode.</p>
-          <a routerLink="/onboarding" class="ghost-link">Create or join a household</a>
-        </div>
-      } @else {
-        @if (needsHouseholdName()) {
-          <div class="name-prompt">
-            <p class="name-prompt-msg">Your household doesn't have a name yet. Add one so members can identify it.</p>
-            <form [formGroup]="householdNameForm" (ngSubmit)="saveHouseholdName()" class="name-form">
-              <input type="text" formControlName="name" placeholder="e.g. The Raj Home" />
-              <button class="primary" type="submit">Save name</button>
-            </form>
-          </div>
-        } @else {
-          <p class="meta">{{ household()?.name }} - {{ household()?.type }}</p>
-        }
-
-        <div class="member-list">
-          @for (member of household()?.members ?? []; track member.userId) {
-            <div class="member-row">
-              <span>{{ member.displayName }}</span>
-              <span class="chip">{{ member.role }}</span>
-            </div>
-          }
-        </div>
-
-        <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()" class="form invite-form">
-          <div class="field">
-            <label>Invite by email</label>
-            <input type="email" formControlName="email" placeholder="partner@email.com" />
-            <p class="field-help">We send this email through EmailJS with your invite link and code.</p>
-          </div>
-          <button class="primary" type="submit">Send invite</button>
-        </form>
-
-        <div class="code-box">
-          <div>
-            <p class="meta">Invite code</p>
-            <div class="code">{{ household()?.inviteCode || '------' }}</div>
-          </div>
-          <div class="code-actions">
-            <button class="ghost-link" type="button" (click)="copyInviteLink()">Copy link</button>
-            <button class="ghost-link" type="button" (click)="regenerateInviteCode()">Regenerate</button>
-          </div>
-        </div>
-
-        @if (canLeaveHousehold()) {
-          @if (confirmLeave()) {
-            <div class="confirm-row">
-              <span>Are you sure? You will lose access to shared data.</span>
-              <button type="button" class="ghost" (click)="cancelLeave()">Cancel</button>
-              <button class="danger-btn" type="button" (click)="leaveHousehold()">Yes, leave</button>
-            </div>
-          } @else {
-            <button class="danger-btn" type="button" (click)="requestLeave()">Leave household</button>
-          }
-        }
-
-        @if (householdMessage) {
-          <p class="notice">{{ householdMessage }}</p>
-        }
-
-        <div class="invite-list">
-          @for (invite of invitesForHousehold(); track invite.id) {
-            <div class="invite-row">
-              <span>{{ invite.email }}</span>
-              <div class="invite-actions">
-                <span class="chip pending">{{ invite.status }}</span>
-                @if (invite.status === 'pending') {
-                  <button type="button" class="cancel-btn" (click)="requestCancelInvite(invite.id)">Cancel</button>
-                }
-              </div>
-            </div>
-          }
-        </div>
-
-        <div class="invite-list">
-          @for (request of requestsForCurrentHousehold(); track request.id) {
-            <div class="invite-row">
-              <span>Move request - {{ request.status }}</span>
-              @if (request.status === 'pending' && request.userId !== user()?.id) {
-                <button type="button" class="approve-btn" (click)="approveRequest(request.id)">Approve</button>
-              }
-            </div>
-          }
-        </div>
-      }
-    </section>
-  </div>
-
-  @if (confirmInviteCancelId()) {
+  @if (confirmReset()) {
     <app-confirm-modal
-      title="Cancel invite?"
-      message="The invite link will stop working for this recipient."
-      confirmLabel="Cancel invite"
+      title="Reset all data?"
+      message="Everything in the current household or personal scope is wiped. This cannot be undone."
+      confirmLabel="Yes, wipe everything"
       [danger]="true"
-      (cancel)="cancelInviteModal()"
-      (confirm)="confirmCancelInvite()"
+      (dismiss)="confirmReset.set(false)"
+      (confirm)="resetAllData()"
+    />
+  }
+
+  @if (confirmDeleteAccount()) {
+    <app-confirm-modal
+      title="Delete your account?"
+      message="Your personal information is redacted, your data removed and your sign-in deleted. This cannot be undone."
+      confirmLabel="Delete account"
+      [danger]="true"
+      (dismiss)="confirmDeleteAccount.set(false)"
+      (confirm)="deleteAccount()"
     />
   }
 </div>

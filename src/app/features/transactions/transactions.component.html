@@ -1,175 +1,377 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <h1>Transactions</h1>
-      <p>Every expense, in one place.</p>
+      <h1>Activity</h1>
+      <p class="subtitle">Every expense and income you've logged, in one ledger.</p>
+    </div>
+    <div class="page-actions">
+      <div class="segmented" role="tablist" aria-label="View">
+        <button type="button" role="tab" [attr.aria-selected]="view() === 'all'" [class.active]="view() === 'all'" (click)="setView('all')">Transactions</button>
+        <button type="button" role="tab" [attr.aria-selected]="view() === 'recurring'" [class.active]="view() === 'recurring'" (click)="setView('recurring')">
+          Recurring
+          @if (templates().length > 0) {
+            <span class="count">{{ templates().length }}</span>
+          }
+        </button>
+      </div>
+      <button type="button" class="btn btn-primary" (click)="addTransaction()"><app-icon name="plus" /> Add</button>
     </div>
   </div>
 
-  <form class="filters" [formGroup]="filterForm">
-    <div class="search-wrap">
-      @if (isNumericSearch()) {
-        <div class="compare-toggle">
-          <button type="button" class="compare-btn" [class.active]="numericCompare() === 'lt'" (click)="setNumericCompare('lt')" title="Less than">
-            <span>&lt;</span>
-          </button>
-          <button type="button" class="compare-btn" [class.active]="numericCompare() === 'eq'" (click)="setNumericCompare('eq')" title="Equal to">
-            <span>=</span>
-          </button>
-          <button type="button" class="compare-btn" [class.active]="numericCompare() === 'gt'" (click)="setNumericCompare('gt')" title="Greater than">
-            <span>&gt;</span>
-          </button>
+  @if (view() === 'recurring') {
+    <!-- ── Recurring series ── -->
+    <section class="stat-grid cols-3">
+      <div class="stat">
+        <span class="stat-label">Monthly commitments</span>
+        <span class="stat-value">{{ recurringExpense() | money:'none' }}</span>
+        <span class="stat-delta">Recurring expenses per month</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Recurring income</span>
+        <span class="stat-value pos">{{ recurringIncome() | money:'none' }}</span>
+        <span class="stat-delta">Per month</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Left after commitments</span>
+        <span class="stat-value" [class.neg]="recurringIncome() - recurringExpense() < 0">{{ (recurringIncome() - recurringExpense()) | money:'none':true }}</span>
+        <span class="stat-delta">Before everyday spending</span>
+      </div>
+    </section>
+
+    <section class="card flush">
+      <div class="card-header">
+        <div>
+          <h2>Active series</h2>
+          <span class="hint">Each series logs a transaction automatically on its day every month.</span>
+        </div>
+      </div>
+      @if (templates().length > 0) {
+        <div class="list">
+          @for (item of templates(); track item.template.id) {
+            <button type="button" class="list-row clickable" (click)="startEditTemplate(item.template)">
+              <span class="swatch" [style.background]="item.template.type === 'income' ? 'var(--pos)' : (item.category?.color ?? 'var(--text-3)')">
+                <app-icon name="repeat" size="16" />
+              </span>
+              <div class="list-main">
+                <span class="list-title">
+                  <span class="truncate">{{ item.template.title }}</span>
+                  <span class="chip" [class.ok]="item.template.type === 'income'">{{ item.template.type === 'income' ? 'Income' : 'Expense' }}</span>
+                </span>
+                <span class="list-meta">
+                  Monthly on the {{ ordinal(item.template.dayOfMonth) }} · next {{ dueText(item.nextDue) }} · {{ item.category?.name ?? 'Uncategorized' }}
+                  @if (hasHousehold()) { · {{ item.template.scope === 'shared' ? 'Shared' : 'Personal' }} }
+                </span>
+              </div>
+              <span class="list-amount" [class.pos]="item.template.type === 'income'">
+                {{ item.template.type === 'income' ? '+' : '' }}{{ item.template.amount | money:'always' }}
+              </span>
+              <app-icon name="chevron-right" size="16" class="faint" />
+            </button>
+          }
+        </div>
+      } @else {
+        <div class="empty">
+          <span class="empty-icon"><app-icon name="repeat" /></span>
+          <h3>No recurring series yet</h3>
+          <p>Turn on “Repeats monthly” when you add rent, salary or a subscription and it will show up here.</p>
+          <button type="button" class="btn btn-primary" (click)="addTransaction()">Add a transaction</button>
         </div>
       }
-      <input type="search" placeholder="Search transactions" formControlName="query" [style.padding-left.px]="isNumericSearch() ? 96 : 14" />
-      <button
-        type="button"
-        class="filter-btn"
-        [class.active]="categoryFilter() || categoryFilterOpen()"
-        (click)="toggleCategoryFilter()"
-        aria-label="Filter by category"
-      >
-        <svg viewBox="0 0 24 24" fill="none">
-          <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        @if (categoryFilter()) {
-          <span class="filter-badge">1</span>
-        }
-      </button>
-    </div>
-    <select formControlName="scope">
-      <option value="all">All</option>
-      @if (hasHousehold()) {
-        <option value="shared">Shared</option>
-      }
-      <option value="personal">Personal</option>
-    </select>
-  </form>
-
-  @if (categoryFilterOpen()) {
-    <div class="filter-dropdown">
-      <div class="filter-dropdown-head">
-        <span>Filter by category</span>
-        @if (categoryFilter()) {
-          <button type="button" class="clear-filter" (click)="setCategoryFilter(null)">Clear</button>
-        }
+    </section>
+  } @else {
+    <!-- ── Filters ── -->
+    <section class="card tight filters">
+      <div class="filter-main">
+        <div class="search">
+          <app-icon name="search" size="18" />
+          <input type="search" placeholder="Search by description, category or amount" [value]="query()" (input)="onQuery($event)" aria-label="Search transactions" />
+        </div>
+        <div class="segmented">
+          <button type="button" [class.active]="typeFilter() === 'all'" (click)="setType('all')">All</button>
+          <button type="button" [class.active]="typeFilter() === 'expense'" (click)="setType('expense')">Expenses</button>
+          <button type="button" [class.active]="typeFilter() === 'income'" (click)="setType('income')">Income</button>
+        </div>
+        <button type="button" class="btn btn-ghost" [class.has-filters]="activeFilterCount() > 0" (click)="filtersOpen.set(!filtersOpen())">
+          <app-icon name="filter" />
+          Filters
+          @if (activeFilterCount() > 0) {
+            <span class="count">{{ activeFilterCount() }}</span>
+          }
+        </button>
       </div>
-      <div class="filter-options">
-        @for (category of appState.categories(); track category.id) {
-          <button
-            type="button"
-            class="filter-option"
-            [class.selected]="categoryFilter() === category.id"
-            (click)="setCategoryFilter(category.id)"
-          >
-            <span class="cat-dot" [style.background]="category.color"></span>
-            {{ category.name }}
+
+      @if (filtersOpen()) {
+        <div class="filter-panel">
+          <div class="filter-group">
+            <span class="field-label">Period</span>
+            <div class="chip-row">
+              <button type="button" class="chip-btn" [class.active]="rangePreset() === 'all'" (click)="setRange('all')">All time</button>
+              <button type="button" class="chip-btn" [class.active]="rangePreset() === 'month'" (click)="setRange('month')">This month</button>
+              <button type="button" class="chip-btn" [class.active]="rangePreset() === 'last-month'" (click)="setRange('last-month')">Last month</button>
+              <button type="button" class="chip-btn" [class.active]="rangePreset() === 'quarter'" (click)="setRange('quarter')">Last 3 months</button>
+              <button type="button" class="chip-btn" [class.active]="rangePreset() === 'custom'" (click)="setRange('custom')">Custom</button>
+            </div>
+            @if (rangePreset() === 'custom') {
+              <div class="custom-range">
+                <input type="date" [value]="customFrom()" (change)="onCustomFrom($event)" aria-label="From" />
+                <span class="faint">to</span>
+                <input type="date" [value]="customTo()" (change)="onCustomTo($event)" aria-label="To" />
+              </div>
+            }
+          </div>
+
+          @if (hasHousehold()) {
+            <div class="filter-group">
+              <span class="field-label">Scope</span>
+              <div class="chip-row">
+                <button type="button" class="chip-btn" [class.active]="scopeFilter() === 'all'" (click)="setScope('all')">All</button>
+                <button type="button" class="chip-btn" [class.active]="scopeFilter() === 'shared'" (click)="setScope('shared')">Shared</button>
+                <button type="button" class="chip-btn" [class.active]="scopeFilter() === 'personal'" (click)="setScope('personal')">Personal</button>
+              </div>
+            </div>
+          }
+
+          <div class="filter-group">
+            <span class="field-label">Category</span>
+            <div class="chip-row">
+              @for (category of categories(); track category.id) {
+                <button type="button" class="chip-btn" [class.active]="categoryFilter() === category.id" (click)="setCategory(category.id)">
+                  <span class="dot" [style.background]="category.color"></span>{{ category.name }}
+                </button>
+              }
+              @if (categories().length === 0) {
+                <span class="faint small">No categories yet.</span>
+              }
+            </div>
+          </div>
+
+          @if (activeFilterCount() > 0 || query()) {
+            <div>
+              <button type="button" class="link-btn small" (click)="clearFilters()">Clear all filters</button>
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- ── Totals for the current filter ── -->
+    <div class="totals">
+      <span><strong>{{ totals().count }}</strong> transaction{{ totals().count === 1 ? '' : 's' }} · {{ rangeText() }}</span>
+      <span class="totals-nums">
+        <span>Spent <strong>{{ totals().spent | money:'none' }}</strong></span>
+        @if (totals().received > 0) {
+          <span>Income <strong class="pos">{{ totals().received | money:'none' }}</strong></span>
+        }
+      </span>
+    </div>
+
+    <!-- ── Ledger ── -->
+    <section class="card flush">
+      @if (visibleGroups().length > 0) {
+        @for (group of visibleGroups(); track group.date) {
+          <div class="list-day-header">
+            <span>{{ dayLabel(group.date) }}</span>
+            <span class="day-total">
+              @if (group.received > 0) { <span class="pos">+{{ group.received | money:'none' }}</span> }
+              @if (group.received > 0 && group.spent > 0) { · }
+              @if (group.spent > 0) { −{{ group.spent | money:'none' }} }
+            </span>
+          </div>
+          @for (tx of group.items; track tx.id) {
+            <app-tx-row
+              [transaction]="tx"
+              [showScope]="hasHousehold()"
+              [showPaidBy]="members().length > 1"
+              [paidByName]="memberName(tx.paidByUserId)"
+              [clickable]="true"
+              (selected)="startEdit($event)"
+            />
+          }
+        }
+        @if (hiddenCount() > 0) {
+          <button type="button" class="btn btn-quiet btn-block load-more" (click)="showMore()">
+            Show more ({{ hiddenCount() }} remaining)
           </button>
         }
-      </div>
-    </div>
+      } @else if (!loaded()) {
+        <div class="skeleton-list">
+          <span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span>
+        </div>
+      } @else if (appState.transactions().length === 0) {
+        <div class="empty">
+          <span class="empty-icon"><app-icon name="list" /></span>
+          <h3>Nothing logged yet</h3>
+          <p>Add your first expense and it will appear here, grouped by day.</p>
+          <button type="button" class="btn btn-primary" (click)="addTransaction()">Add a transaction</button>
+        </div>
+      } @else {
+        <div class="empty">
+          <h3>No matches</h3>
+          <p>Nothing matches these filters. Try widening the period or clearing a filter.</p>
+          <button type="button" class="btn btn-ghost" (click)="clearFilters()">Clear filters</button>
+        </div>
+      }
+    </section>
   }
 
-  <div class="card list">
-    @for (transaction of filteredTransactions(); track transaction.id) {
-      <app-tx-row
-        [transaction]="transaction"
-        [dateLeft]="true"
-        [showEditButton]="true"
-        [showDeleteButton]="true"
-        (edit)="startEdit($event)"
-        (delete)="requestDelete($event)"
-      />
-    }
-    @if (filteredTransactions().length === 0) {
-      <p class="empty">No transactions match this filter yet.</p>
-    }
-  </div>
-
-  @if (editingId()) {
-    <div class="overlay" (click)="cancelEdit()"></div>
-    <div class="editor">
-      <div class="editor-head">
-        <h3>Edit transaction</h3>
-        <button type="button" class="icon-btn" (click)="cancelEdit()">X</button>
-      </div>
-      <form class="editor-form" [formGroup]="editForm" (ngSubmit)="saveEdit()">
-        <div class="field">
-          <label>Title</label>
-          <input type="text" formControlName="title" />
+  <!-- ── Edit transaction ── -->
+  @if (editing(); as tx) {
+    <app-sheet title="Edit transaction" [subtitle]="tx.recurring ? 'Part of a recurring series. Changes apply to this entry only.' : ''" (closed)="cancelEdit()">
+      <form class="form" [formGroup]="editForm" (ngSubmit)="saveEdit()">
+        <div class="segmented block">
+          <button type="button" [class.active]="editType() === 'expense'" (click)="editForm.patchValue({ type: 'expense' })">Expense</button>
+          <button type="button" [class.active]="editType() === 'income'" (click)="editForm.patchValue({ type: 'income' })">Income</button>
         </div>
-        <div class="split">
+        <div class="field-row">
           <div class="field">
-            <label>Amount</label>
-            <input type="number" min="0" step="0.01" formControlName="amount" />
-          </div>
-          <div class="field">
-            <label>Date</label>
-            <input type="date" formControlName="date" />
-          </div>
-        </div>
-        <div class="split">
-          <div class="field">
-            <label>Category</label>
-            <div class="category-row">
-              <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
-                @for (category of appState.categories(); track category.id) {
-                  <option [value]="category.id">{{ category.name }}</option>
-                }
-                <option value="__new__">+ New category</option>
-              </select>
-              <button type="button" class="tiny-icon" (click)="openRenameCategory()" aria-label="Rename category">
-                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              </button>
+            <label for="e-amount">Amount</label>
+            <div class="amount-field">
+              <span class="prefix">{{ currency.symbol() }}</span>
+              <input id="e-amount" type="number" inputmode="decimal" formControlName="amount" min="0" step="0.01" />
             </div>
           </div>
           <div class="field">
-            <label>Scope</label>
-            <select formControlName="scope">
-              @if (hasHousehold()) {
-                <option value="shared">Shared</option>
-              }
-              <option value="personal">Personal</option>
-            </select>
+            <label for="e-date">Date</label>
+            <input id="e-date" type="date" formControlName="date" />
           </div>
         </div>
-        <div class="editor-actions">
-          <button type="button" class="ghost" (click)="cancelEdit()">Cancel</button>
-          <button type="submit" class="primary">Save</button>
+        <div class="field">
+          <label for="e-title">Description</label>
+          <input id="e-title" type="text" formControlName="title" />
+        </div>
+        @if (editType() === 'expense') {
+          <div class="field">
+            <label for="e-category">Category</label>
+            <select id="e-category" formControlName="categoryId" (change)="onEditCategoryChange($event)">
+              @for (category of categories(); track category.id) {
+                <option [value]="category.id">{{ category.name }}</option>
+              }
+              <option value="__new__">+ New category…</option>
+            </select>
+          </div>
+        }
+        @if (hasHousehold()) {
+          <div class="field-row">
+            <div class="field">
+              <span class="field-label">Scope</span>
+              <div class="segmented block">
+                <button type="button" [class.active]="editForm.value.scope === 'shared'" (click)="editForm.patchValue({ scope: 'shared' })">Shared</button>
+                <button type="button" [class.active]="editForm.value.scope === 'personal'" (click)="editForm.patchValue({ scope: 'personal' })">Personal</button>
+              </div>
+            </div>
+            @if (members().length > 1) {
+              <div class="field">
+                <label for="e-paidby">{{ editType() === 'income' ? 'Received by' : 'Paid by' }}</label>
+                <select id="e-paidby" formControlName="paidByUserId">
+                  @for (member of members(); track member.userId) {
+                    <option [value]="member.userId">{{ member.displayName }}</option>
+                  }
+                </select>
+              </div>
+            }
+          </div>
+        }
+        <div class="field">
+          <label for="e-notes">Notes</label>
+          <textarea id="e-notes" formControlName="notes" rows="2" placeholder="Optional"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-danger" (click)="requestDelete(tx.id)"><app-icon name="trash" /> Delete</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost" (click)="cancelEdit()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
         </div>
       </form>
-    </div>
+    </app-sheet>
+  }
+
+  <!-- ── Edit recurring series ── -->
+  @if (editingTemplate(); as template) {
+    <app-sheet title="Edit recurring series" subtitle="Changes apply to entries generated from now on." (closed)="editingTemplate.set(null)">
+      <form class="form" [formGroup]="templateForm" (ngSubmit)="saveTemplate()">
+        <div class="field">
+          <label for="t-title">Title</label>
+          <input id="t-title" type="text" formControlName="title" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="t-amount">Amount</label>
+            <div class="amount-field">
+              <span class="prefix">{{ currency.symbol() }}</span>
+              <input id="t-amount" type="number" inputmode="decimal" formControlName="amount" min="0" step="0.01" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="t-day">Day of month</label>
+            <input id="t-day" type="number" formControlName="dayOfMonth" min="1" max="31" />
+            <span class="hint">Days past a month's end (e.g. 31) fall on its last day.</span>
+          </div>
+        </div>
+        @if (template.type !== 'income') {
+          <div class="field">
+            <label for="t-category">Category</label>
+            <select id="t-category" formControlName="categoryId" (change)="onTemplateCategoryChange($event)">
+              @for (category of categories(); track category.id) {
+                <option [value]="category.id">{{ category.name }}</option>
+              }
+              <option value="__new__">+ New category…</option>
+            </select>
+          </div>
+        }
+        @if (hasHousehold()) {
+          <div class="field-row">
+            <div class="field">
+              <span class="field-label">Scope</span>
+              <div class="segmented block">
+                <button type="button" [class.active]="templateForm.value.scope === 'shared'" (click)="templateForm.patchValue({ scope: 'shared' })">Shared</button>
+                <button type="button" [class.active]="templateForm.value.scope === 'personal'" (click)="templateForm.patchValue({ scope: 'personal' })">Personal</button>
+              </div>
+            </div>
+            @if (members().length > 1) {
+              <div class="field">
+                <label for="t-paidby">Paid by</label>
+                <select id="t-paidby" formControlName="paidByUserId">
+                  @for (member of members(); track member.userId) {
+                    <option [value]="member.userId">{{ member.displayName }}</option>
+                  }
+                </select>
+              </div>
+            }
+          </div>
+        }
+        <div class="form-actions">
+          <button type="button" class="btn btn-danger" (click)="requestStopTemplate(template.id)">Stop series</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost" (click)="editingTemplate.set(null)">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </app-sheet>
   }
 
   @if (showCategoryModal()) {
-    <app-category-modal
-      (created)="onCategoryCreated($event)"
-      (closed)="closeCategoryModal()"
-    />
-  }
-
-  @if (showRenameCategoryModal()) {
-    <div class="overlay" (click)="closeRenameCategoryModal()"></div>
-    <div class="rename-modal">
-      <h3>Rename category</h3>
-      <form [formGroup]="renameCategoryForm" (ngSubmit)="saveCategoryRename()">
-        <input type="text" formControlName="name" placeholder="Category name" />
-        <div class="rename-actions">
-          <button type="button" class="ghost" (click)="closeRenameCategoryModal()">Cancel</button>
-          <button type="submit" class="primary">Save</button>
-        </div>
-      </form>
-    </div>
+    <app-category-modal (saved)="onCategorySaved($event)" (closed)="showCategoryModal.set(false)" />
   }
 
   @if (confirmDeleteId()) {
     <app-confirm-modal
-      title="Delete transaction?"
-      message="This transaction will be permanently removed."
+      title="Delete this transaction?"
+      message="It will be removed from your ledger and every total that included it."
       confirmLabel="Delete"
       [danger]="true"
-      (cancel)="cancelDelete()"
+      (dismiss)="confirmDeleteId.set(null)"
       (confirm)="confirmDelete()"
+    />
+  }
+
+  @if (confirmStopTemplateId()) {
+    <app-confirm-modal
+      title="Stop this recurring series?"
+      message="No new entries will be created. Transactions already logged stay in your history."
+      confirmLabel="Stop series"
+      [danger]="true"
+      (dismiss)="confirmStopTemplateId.set(null)"
+      (confirm)="confirmStopTemplate()"
     />
   }
 </div>

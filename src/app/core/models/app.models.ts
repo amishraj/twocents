@@ -1,5 +1,7 @@
 export type Period = 'weekly' | 'monthly';
 export type Scope = 'personal' | 'shared';
+// Money direction. Absent/undefined means 'expense' (all legacy rows are spend).
+export type TransactionType = 'expense' | 'income';
 export type HouseholdType = 'solo' | 'couple';
 export type InviteStatus = 'pending' | 'accepted';
 export type HouseholdChangeRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -20,10 +22,18 @@ export interface User {
   householdId: string;
   preferences: UserPreferences;
   createdAt: string;
+  deleted?: boolean;
+  accountDeletion?: AccountDeletionState;
 }
 
 export interface HouseholdMember {
   userId: string;
+  role: HouseholdRole;
+  displayName: string;
+  joinedAt: string;
+}
+
+export interface MembersByUidEntry {
   role: HouseholdRole;
   displayName: string;
   joinedAt: string;
@@ -34,6 +44,9 @@ export interface Household {
   name: string;
   type: HouseholdType;
   members: HouseholdMember[];
+  // Denormalized membership map keyed by uid. Authoritative once the strict
+  // (phase-E) Firestore rules are deployed; written alongside members[] today.
+  membersByUid?: Record<string, MembersByUidEntry>;
   sharedBudgetEnabled: boolean;
   inviteCode: string;
   inviteCodeExpiresAt?: string;
@@ -62,9 +75,17 @@ export interface Transaction {
   id: string;
   title: string;
   amount: number;
+  // Money direction. Absent = 'expense' for backward compatibility.
+  type?: TransactionType;
   categoryId: string;
   paidByUserId: string;
+  // Legacy ISO string. Derived from localDate on write; never the source of
+  // truth for month bucketing. Use parseLocalDate(tx.localDate ?? coerceLegacy…)
+  // when reading.
   date: string;
+  // Canonical wall-clock date in YYYY-MM-DD. Source of truth for recurring
+  // bucketing and monthly aggregation.
+  localDate?: string;
   scope: Scope;
   recurring: boolean;
   recurringTemplateId?: string;
@@ -76,6 +97,8 @@ export interface RecurringTemplate {
   id: string;
   title: string;
   amount: number;
+  // Money direction of the generated transactions. Absent = 'expense'.
+  type?: TransactionType;
   categoryId: string;
   paidByUserId: string;
   dayOfMonth: number;
@@ -135,4 +158,23 @@ export interface AuthSession {
   token: string;
   expiresAt: string;
   isAuthenticated: boolean;
+}
+
+export type AccountDeletionStatus = 'pending' | 'in_progress' | 'complete';
+
+export interface AccountDeletionState {
+  status: AccountDeletionStatus;
+  cursorCollection?: string;
+  cursorLastId?: string;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface InviteCodeDoc {
+  code: string;
+  householdId: string;
+  expiresAt: string;
+  createdByUid: string;
+  acceptedByUid?: string;
+  acceptedAt?: string;
 }

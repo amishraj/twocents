@@ -1,18 +1,25 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
+import { CurrencyService } from '../../core/services/currency.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { ToastService } from '../toast/toast.service';
 import { CategoryModalComponent } from '../category-modal/category-modal.component';
-import { RecurringTemplate, Scope } from '../../core/models/app.models';
+import { SheetComponent } from '../sheet/sheet.component';
+import { IconComponent } from '../icon/icon.component';
+import { RecurringTemplate, Scope, TransactionType } from '../../core/models/app.models';
 import { createId } from '../../core/utils/id';
+import { buildRecurringKey, localDateToIso, parseLocalDateParts, todayLocalDate } from '../../core/utils/dates';
+import { addDays } from '../../core/utils/periods';
+import { isPositiveAmount, normalizeAmount } from '../../core/utils/money';
+
+type DatePick = 'today' | 'yesterday' | 'custom';
 
 @Component({
   selector: 'app-quick-add-expense',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, CategoryModalComponent],
+  imports: [ReactiveFormsModule, CategoryModalComponent, SheetComponent, IconComponent],
   templateUrl: './quick-add-expense.component.html',
   styleUrl: './quick-add-expense.component.scss'
 })
@@ -21,186 +28,191 @@ export class QuickAddExpenseComponent {
   private readonly appState = inject(AppStateService);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
-  public ui = inject(UiStateService);
+  readonly currency = inject(CurrencyService);
+  readonly ui = inject(UiStateService);
 
-  categories = computed(() => this.appState.categories());
-  activeUser = computed(() => this.auth.getActiveUser());
-  hasHousehold = computed(() => Boolean(this.activeUser()?.householdId?.trim()));
-  householdMembers = computed(() => {
+  readonly activeUser = computed(() => this.auth.getActiveUser());
+  readonly hasHousehold = computed(() => Boolean(this.activeUser()?.householdId?.trim()));
+  readonly members = computed(() => {
     const user = this.activeUser();
-    if (!user?.householdId) return [];
-    const household = this.appState.householdById(user.householdId);
-    return household?.members ?? [];
+    if (!user?.householdId) {
+      return [];
+    }
+    return this.appState.householdById(user.householdId)?.members ?? [];
   });
-  showCategoryModal = signal(false);
-  showRenameCategoryModal = signal(false);
-  renameCategoryId = signal<string | null>(null);
+  readonly categories = computed(() =>
+    this.appState
+      .categories()
+      .filter((c) => c.name.trim().toLowerCase() !== 'income')
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+  );
+
+  readonly type = signal<TransactionType>('expense');
+  readonly datePick = signal<DatePick>('today');
+  readonly showNotes = signal(false);
+  readonly showCategoryModal = signal(false);
+  readonly submitting = signal(false);
 
   form = this.fb.group({
-    title: ['', Validators.required],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
-    categoryId: ['', Validators.required],
+    title: ['', Validators.required],
+    categoryId: [''],
+    date: [todayLocalDate(), Validators.required],
+    scope: ['personal' as Scope, Validators.required],
     paidByUserId: ['', Validators.required],
-    date: [new Date().toISOString().slice(0, 10), Validators.required],
-    scope: ['shared', Validators.required],
-    recurring: [false]
+    recurring: [false],
+    notes: ['']
   });
 
-  renameCategoryForm = this.fb.group({
-    name: ['', Validators.required]
+  readonly recurringDay = computed(() => {
+    const date = this.formDate();
+    return parseLocalDateParts(date)?.day ?? new Date().getDate();
   });
+  private readonly formDate = signal(todayLocalDate());
 
   constructor() {
-    const activeUser = this.auth.getActiveUser();
-    if (activeUser) {
-      this.form.patchValue({
-        paidByUserId: activeUser.id,
-        scope: activeUser.householdId ? 'shared' : 'personal'
-      });
-    }
+    // Reset to sensible defaults every time the sheet opens, applying any preset
+    // the caller passed (e.g. "add income" from the household page).
+    // Only the open flag and preset are tracked; everything resetForm reads
+    // (categories, user) is untracked so creating a category mid-entry doesn't
+    // wipe what the user already typed.
+    effect(() => {
+      if (!this.ui.quickAddOpen()) {
+        return;
+      }
+      const preset = this.ui.quickAddPreset();
+      untracked(() => this.resetForm(preset?.type ?? 'expense', preset?.categoryId, preset?.date));
+    }, { allowSignalWrites: true });
 
-    if (this.categories().length > 0) {
-      this.form.patchValue({ categoryId: this.categories()[0].id });
-    }
+    this.form.controls.date.valueChanges.subscribe((value) => this.formDate.set(value ?? todayLocalDate()));
   }
 
-  close(): void {
-    this.closeRenameCategoryModal();
-    this.ui.closeQuickAdd();
+  private resetForm(type: TransactionType, categoryId?: string, date?: string): void {
+    const user = this.activeUser();
+    const household = this.hasHousehold();
+    const defaultCategory = categoryId ?? this.categories()[0]?.id ?? '';
+    const category = this.appState.categoryById(defaultCategory);
+    const today = todayLocalDate();
+    const pickedDate = date ?? today;
+    this.type.set(type);
+    this.datePick.set(pickedDate === today ? 'today' : pickedDate === addDays(today, -1) ? 'yesterday' : 'custom');
+    this.showNotes.set(false);
+    this.form.reset({
+      amount: null,
+      title: '',
+      categoryId: type === 'expense' ? defaultCategory : '',
+      date: pickedDate,
+      scope: household ? (category?.defaultScope ?? 'shared') : 'personal',
+      paidByUserId: user?.id ?? '',
+      recurring: false,
+      notes: ''
+    });
+    this.formDate.set(pickedDate);
   }
 
-  onCategorySelect(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    if (value === '__new__') {
-      this.showCategoryModal.set(true);
-      this.form.patchValue({ categoryId: '' });
-    }
-  }
-
-  onCategoryCreated(id: string): void {
-    this.showCategoryModal.set(false);
-    this.form.patchValue({ categoryId: id });
-  }
-
-  closeCategoryModal(): void {
-    this.showCategoryModal.set(false);
-    if (!this.form.value.categoryId) {
+  setType(type: TransactionType): void {
+    this.type.set(type);
+    if (type === 'expense' && !this.form.value.categoryId) {
       this.form.patchValue({ categoryId: this.categories()[0]?.id ?? '' });
     }
   }
 
-  openRenameCategory(): void {
-    const categoryId = this.form.value.categoryId ?? '';
-    if (!categoryId || categoryId === '__new__') {
-      this.toast.info('Select a category first, then rename it.');
-      return;
+  pickCategory(id: string): void {
+    this.form.patchValue({ categoryId: id });
+    const category = this.appState.categoryById(id);
+    if (category && this.hasHousehold() && !this.form.controls.scope.dirty) {
+      this.form.patchValue({ scope: category.defaultScope });
     }
-
-    const category = this.appState.categoryById(categoryId);
-    if (!category) {
-      this.toast.warning('Could not find this category right now.');
-      return;
-    }
-
-    this.renameCategoryId.set(categoryId);
-    this.renameCategoryForm.patchValue({ name: category.name });
-    this.showRenameCategoryModal.set(true);
   }
 
-  closeRenameCategoryModal(): void {
-    this.showRenameCategoryModal.set(false);
-    this.renameCategoryId.set(null);
-    this.renameCategoryForm.reset({ name: '' });
+  setScope(scope: Scope): void {
+    this.form.patchValue({ scope });
+    this.form.controls.scope.markAsDirty();
   }
 
-  saveCategoryRename(): void {
-    if (this.renameCategoryForm.invalid) {
-      this.renameCategoryForm.markAllAsTouched();
-      return;
+  pickDate(pick: DatePick): void {
+    this.datePick.set(pick);
+    const today = todayLocalDate();
+    if (pick === 'today') {
+      this.form.patchValue({ date: today });
+    } else if (pick === 'yesterday') {
+      this.form.patchValue({ date: addDays(today, -1) });
     }
-
-    const categoryId = this.renameCategoryId();
-    if (!categoryId) {
-      return;
-    }
-
-    const nextName = (this.renameCategoryForm.value.name ?? '').trim();
-    if (!nextName) {
-      this.toast.warning('Category name cannot be empty.');
-      return;
-    }
-
-    const duplicate = this.appState
-      .categories()
-      .some((category) => category.id !== categoryId && category.name.trim().toLowerCase() === nextName.toLowerCase());
-    if (duplicate) {
-      this.toast.warning('A category with this name already exists.');
-      return;
-    }
-
-    const nextCategories = this.appState.categories().map((category) =>
-      category.id === categoryId
-        ? {
-            ...category,
-            name: nextName
-          }
-        : category
-    );
-
-    this.appState.updateCategories(nextCategories);
-    this.closeRenameCategoryModal();
-    this.toast.success('Category renamed.');
   }
 
-  submit(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      if (!this.form.value.categoryId) {
-        this.toast.warning('Please select or create a category first.');
-      } else {
-        this.toast.warning('Please fill in all required fields.');
-      }
-      return;
-    }
+  toggleRecurring(): void {
+    this.form.patchValue({ recurring: !this.form.value.recurring });
+  }
 
+  onCategorySaved(id: string): void {
+    this.showCategoryModal.set(false);
+    this.pickCategory(id);
+  }
+
+  close(): void {
+    this.ui.closeQuickAdd();
+  }
+
+  submit(keepOpen = false): void {
+    const type = this.type();
     const value = this.form.getRawValue();
-    const selectedScope = (value.scope ?? 'shared') as Scope;
-    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
-    if (selectedScope === 'shared' && resolvedScope === 'personal') {
-      this.toast.info('Shared expenses are locked until you join or create a household. Saved as personal.');
+
+    if (!isPositiveAmount(value.amount)) {
+      this.form.controls.amount.markAsTouched();
+      this.toast.warning('Enter an amount greater than zero.');
+      return;
+    }
+    if (!(value.title ?? '').trim()) {
+      this.form.controls.title.markAsTouched();
+      this.toast.warning(type === 'income' ? 'Describe where the money came from.' : 'Describe what you paid for.');
+      return;
     }
 
-    const dateValue = value.date ?? new Date().toISOString().slice(0, 10);
-    const isoDate = new Date(`${dateValue}T12:00:00`).toISOString();
+    let categoryId = value.categoryId ?? '';
+    const scope: Scope = this.hasHousehold() ? ((value.scope ?? 'shared') as Scope) : 'personal';
+    if (type === 'income') {
+      categoryId = this.appState.ensureIncomeCategoryId(scope);
+    } else if (!categoryId) {
+      this.toast.warning('Pick a category, or create one.');
+      return;
+    }
 
+    const localDate = value.date || todayLocalDate();
+    const isoDate = localDateToIso(localDate);
+    const amount = normalizeAmount(value.amount);
+    const paidByUserId = value.paidByUserId || this.activeUser()?.id || '';
     const recurringTemplateId = value.recurring ? createId() : undefined;
-    const dueDate = new Date(isoDate);
-    const recurringKey = recurringTemplateId
-      ? `${recurringTemplateId}_${dueDate.getFullYear()}_${dueDate.getMonth() + 1}`
-      : undefined;
+    const recurringKey = recurringTemplateId ? buildRecurringKey(recurringTemplateId, localDate) ?? undefined : undefined;
+    const notes = (value.notes ?? '').trim() || undefined;
+    const title = (value.title ?? '').trim();
 
     this.appState.addTransaction({
       id: createId(),
-      title: value.title ?? '',
-      amount: Number(value.amount),
-      categoryId: value.categoryId ?? '',
-      paidByUserId: value.paidByUserId ?? '',
+      title,
+      amount,
+      type,
+      categoryId,
+      paidByUserId,
       date: isoDate,
-      scope: resolvedScope,
+      localDate,
+      scope,
       recurring: Boolean(value.recurring),
       recurringTemplateId,
-      recurringKey
+      recurringKey,
+      notes
     });
 
-    if (value.recurring && recurringTemplateId) {
+    if (recurringTemplateId) {
       const template: RecurringTemplate = {
         id: recurringTemplateId,
-        title: value.title ?? '',
-        amount: Number(value.amount),
-        categoryId: value.categoryId ?? '',
-        paidByUserId: value.paidByUserId ?? '',
-        dayOfMonth: dueDate.getDate(),
-        scope: resolvedScope,
+        title,
+        amount,
+        type,
+        categoryId,
+        paidByUserId,
+        dayOfMonth: parseLocalDateParts(localDate)?.day ?? new Date().getDate(),
+        scope,
         startDate: isoDate,
         active: true
       };
@@ -208,18 +220,15 @@ export class QuickAddExpenseComponent {
       void this.appState.ensureRecurringUpToDate();
     }
 
-    this.toast.success(`Expense "${value.title}" added.`);
+    this.toast.success(
+      `${type === 'income' ? 'Income' : 'Expense'} added: ${title} · ${this.currency.format(amount, { decimals: 'always' })}`
+    );
 
-    this.form.reset({
-      title: '',
-      amount: null,
-      categoryId: this.categories()[0]?.id ?? '',
-      paidByUserId: this.activeUser()?.id ?? '',
-      date: new Date().toISOString().slice(0, 10),
-      scope: this.hasHousehold() ? 'shared' : 'personal',
-      recurring: false
-    });
-
+    if (keepOpen) {
+      const keepCategory = categoryId;
+      this.resetForm(type, type === 'expense' ? keepCategory : undefined, localDate);
+      return;
+    }
     this.close();
   }
 }

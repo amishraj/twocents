@@ -7,9 +7,13 @@ import { ToastService } from './toast.service';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="toast-container">
+    <div class="toast-container" aria-live="polite" aria-atomic="false">
       @for (toast of toastService.toasts(); track toast.id) {
-        <div class="toast" [class]="'toast--' + toast.type" (click)="toastService.dismiss(toast.id)">
+        <div
+          class="toast"
+          [class]="'toast--' + toast.type"
+          [attr.role]="toast.type === 'error' ? 'alert' : 'status'"
+        >
           <span class="toast-icon">
             @switch (toast.type) {
               @case ('success') { <span>&#10003;</span> }
@@ -19,6 +23,12 @@ import { ToastService } from './toast.service';
             }
           </span>
           <span class="toast-message">{{ toast.message }}</span>
+          <button
+            type="button"
+            class="toast-close"
+            aria-label="Dismiss notification"
+            (click)="toastService.dismiss(toast.id)"
+          >&#10005;</button>
         </div>
       }
     </div>
@@ -46,9 +56,28 @@ import { ToastService } from './toast.service';
       font-weight: 500;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
       pointer-events: auto;
-      cursor: pointer;
       animation: slideIn 0.25s ease-out;
       backdrop-filter: blur(8px);
+    }
+
+    .toast-close {
+      flex-shrink: 0;
+      margin-left: 0.4rem;
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.12);
+      color: inherit;
+      font-size: 0.8rem;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0.85;
+    }
+
+    .toast-close:hover {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.22);
     }
 
     .toast--success {
@@ -95,7 +124,7 @@ import { ToastService } from './toast.service';
       .toast-container {
         left: 1rem;
         right: 1rem;
-        bottom: 5rem;
+        bottom: calc(5rem + env(safe-area-inset-bottom));
         max-width: none;
       }
     }

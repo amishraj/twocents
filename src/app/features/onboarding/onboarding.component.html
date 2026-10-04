@@ -1,105 +1,137 @@
 <div class="onboarding">
-  <div class="card">
+  <div class="panel">
+    <a class="brand" routerLink="/dashboard">
+      <span class="logo">¢</span>
+      <span>TwoCents</span>
+    </a>
+
     @if (step() === 'choice') {
-      <h1>Welcome to TwoCents</h1>
-      <p>How do you want to start?</p>
-      <div class="choice-actions">
-        <button class="primary" type="button" (click)="chooseCreate()">Create household</button>
-        <button class="primary" type="button" (click)="chooseJoin()">Join household</button>
-        <button class="ghost" type="button" (click)="skipForNow()">Skip for now (personal only)</button>
+      <div class="stack intro">
+        <h1>How do you want to use TwoCents?</h1>
+        <p class="muted">You can change this later from Settings.</p>
+      </div>
+      <div class="choices">
+        <button type="button" class="choice" (click)="chooseCreate()">
+          <span class="swatch" style="background: var(--accent)"><app-icon name="users" size="20" /></span>
+          <span class="choice-text">
+            <strong>Start a household</strong>
+            <span>Share budgets, goals and expenses with a partner. Invite them next.</span>
+          </span>
+          <app-icon name="chevron-right" />
+        </button>
+        <button type="button" class="choice" (click)="chooseJoin()">
+          <span class="swatch" style="background: var(--pos)"><app-icon name="key" size="20" /></span>
+          <span class="choice-text">
+            <strong>Join with an invite code</strong>
+            <span>Someone already set up a household and sent you a code.</span>
+          </span>
+          <app-icon name="chevron-right" />
+        </button>
+        <button type="button" class="choice" (click)="skipForNow()">
+          <span class="swatch" style="background: var(--text-3)"><app-icon name="user" size="20" /></span>
+          <span class="choice-text">
+            <strong>Just me for now</strong>
+            <span>Track your own spending. You can create or join a household any time.</span>
+          </span>
+          <app-icon name="chevron-right" />
+        </button>
       </div>
     }
 
     @if (step() === 'create') {
-      <h1>Create your household</h1>
-      <p>Set up shared finances now, invite others in the next step.</p>
-
-      <form [formGroup]="createForm" (ngSubmit)="createHousehold()">
+      <div class="stack intro">
+        <button type="button" class="link-btn back" (click)="backToChoice()"><app-icon name="chevron-left" size="16" /> Back</button>
+        <h1>Set up your household</h1>
+        <p class="muted">A shared space for budgets and expenses. You'll be its owner.</p>
+      </div>
+      <form class="form" [formGroup]="createForm" (ngSubmit)="createHousehold()">
         <div class="field">
-          <label>Household name</label>
-          <input type="text" formControlName="householdName" placeholder="e.g. The Raj Home" />
+          <label for="ob-name">Household name</label>
+          <input id="ob-name" type="text" formControlName="householdName" placeholder="e.g. The Raj home" autocomplete="off" />
         </div>
-        <div class="grid">
+        <div class="field-row">
           <div class="field">
-            <label>Type</label>
-            <select formControlName="householdType">
-              <option value="couple">Couple</option>
-              <option value="solo">Solo</option>
+            <label for="ob-type">Who's in it</label>
+            <select id="ob-type" formControlName="householdType">
+              <option value="couple">A couple</option>
+              <option value="solo">Just me (for now)</option>
             </select>
           </div>
           <div class="field">
-            <label>Currency</label>
-            <select formControlName="currency">
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="INR">INR</option>
-              <option value="GBP">GBP</option>
-              <option value="CAD">CAD</option>
+            <label for="ob-currency">Currency</label>
+            <select id="ob-currency" formControlName="currency">
+              @for (code of currencies; track code) {
+                <option [value]="code">{{ code }}</option>
+              }
             </select>
           </div>
         </div>
         <div class="field">
-          <label>Monthly income</label>
-          <input type="number" formControlName="incomeMonthly" min="0" />
+          <label for="ob-income">Your monthly income</label>
+          <input id="ob-income" type="number" inputmode="decimal" formControlName="incomeMonthly" min="0" step="1" />
+          <span class="hint">Optional planning number used for the household's fair-share split. You can change it in Settings.</span>
         </div>
-
-        <div class="row-actions">
-          <button class="ghost" type="button" (click)="backToChoice()">Back</button>
-          <button class="primary" type="submit">Create household</button>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg" [disabled]="busy()">{{ busy() ? 'Creating…' : 'Create household' }}</button>
         </div>
       </form>
     }
 
     @if (step() === 'join') {
-      <h1>Join a household</h1>
-      <p>Use an invite code from the household owner.</p>
-      <form [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
+      <div class="stack intro">
+        <button type="button" class="link-btn back" (click)="backToChoice()"><app-icon name="chevron-left" size="16" /> Back</button>
+        <h1>Join a household</h1>
+        <p class="muted">Paste the invite code or use the link you were sent.</p>
+      </div>
+      <form class="form" [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
         <div class="field">
-          <label>Invite code</label>
-          <input type="text" formControlName="code" placeholder="ABC123" />
+          <label for="ob-code">Invite code</label>
+          <input id="ob-code" type="text" formControlName="code" placeholder="e.g. 7KQ2M9…" autocomplete="off" autocapitalize="characters" class="code-input" />
         </div>
         <div class="field">
-          <label>Monthly income</label>
-          <input type="number" formControlName="incomeMonthly" min="0" />
+          <label for="ob-income-join">Your monthly income</label>
+          <input id="ob-income-join" type="number" inputmode="decimal" formControlName="incomeMonthly" min="0" step="1" />
+          <span class="hint">Optional. Used for the household's fair-share split.</span>
         </div>
-
-        <div class="row-actions">
-          <button class="ghost" type="button" (click)="backToChoice()">Back</button>
-          <button class="primary" type="submit">Join household</button>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg" [disabled]="busy()">{{ busy() ? 'Joining…' : 'Join household' }}</button>
         </div>
       </form>
     }
 
     @if (step() === 'invite') {
-      <h1>Invite your people</h1>
-      <p>Use email invite or share your code. Code stays valid for one hour.</p>
-
+      <div class="stack intro">
+        <span class="chip ok"><app-icon name="check" size="12" /> Household created</span>
+        <h1>Invite your partner</h1>
+        <p class="muted">Share the code or link, or send it by email. You can also do this later from the Household page.</p>
+      </div>
       <div class="code-box">
         <div>
-          <p class="kicker">Invite code</p>
+          <span class="field-label">Invite code</span>
           <div class="code">{{ activeHousehold()?.inviteCode }}</div>
-          <p class="meta">Expires: {{ activeHousehold()?.inviteCodeExpiresAt | date: 'short' }}</p>
+          <span class="tiny faint">Valid for 24 hours · single use</span>
         </div>
         <div class="code-actions">
-          <button class="ghost" type="button" (click)="copyInviteLink()">Copy link</button>
-          <button class="ghost" type="button" (click)="regenerateInviteCode()">Regenerate</button>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="copyInviteLink()"><app-icon name="copy" size="16" /> Copy link</button>
+          <button type="button" class="btn btn-sm btn-quiet" (click)="regenerateInviteCode()"><app-icon name="refresh" size="16" /> New code</button>
         </div>
       </div>
-
-      <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()">
+      <form class="form" [formGroup]="inviteForm" (ngSubmit)="sendInvite()">
         <div class="field">
-          <label>Invite by email</label>
-          <input type="email" formControlName="email" placeholder="partner@email.com" />
-        </div>
-        <div class="row-actions">
-          <button class="ghost" type="submit">Send invite</button>
-          <button class="primary" type="button" (click)="finish()">Continue to household</button>
+          <label for="ob-email">Send by email</label>
+          <div class="row">
+            <input id="ob-email" type="email" formControlName="email" placeholder="partner@email.com" />
+            <button type="submit" class="btn btn-ghost" [disabled]="busy()">Send</button>
+          </div>
         </div>
       </form>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary btn-lg" (click)="finish()">Continue to TwoCents</button>
+      </div>
     }
 
     @if (message) {
-      <p class="notice">{{ message }}</p>
+      <p class="notice" [class.neg]="messageIsError">{{ message }}</p>
     }
   </div>
 </div>

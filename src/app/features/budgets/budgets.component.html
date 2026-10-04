@@ -2,281 +2,260 @@
   <div class="page-header">
     <div>
       <h1>Budgets</h1>
-      <p>Set targets for shared and personal spend.</p>
+      <p class="subtitle">Limits per category, tracked against the current calendar month or week.</p>
     </div>
-    <div class="actions">
-      <button type="button" class="primary" (click)="toggleBudgetForm()">Add budget</button>
+    <div class="page-actions">
+      <button type="button" class="btn btn-ghost" (click)="categoriesOpen.set(!categoriesOpen())">
+        <app-icon name="tag" /> Categories
+      </button>
+      <button type="button" class="btn btn-primary" (click)="openCreate()"><app-icon name="plus" /> New budget</button>
     </div>
   </div>
 
-  @if (showBudgetForm) {
-    <form class="card form" [formGroup]="budgetForm" (ngSubmit)="addBudget()">
-      <div class="field">
-        <label>Category</label>
-        <div class="category-row">
-          <select formControlName="categoryId" (change)="onBudgetCategorySelect($event)">
-            @for (category of categories(); track category.id) {
-              <option [value]="category.id">{{ category.name }}</option>
-            }
-            <option value="__new__">+ New category</option>
-          </select>
-          <button type="button" class="tiny-icon" (click)="openRenameCategoryForCreate()" aria-label="Rename category">
-            <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          </button>
+  @if (summaries().length > 0) {
+    <section class="card overview">
+      <div class="overview-main">
+        <div>
+          <span class="stat-label">{{ monthLabel() }} · monthly budgets</span>
+          <div class="overview-nums">
+            <span class="big">{{ overview().spent | money:'none' }}</span>
+            <span class="faint">of {{ overview().limit | money:'none' }}</span>
+          </div>
+        </div>
+        <div class="overview-right">
+          @if (overview().over > 0) { <span class="chip over">{{ overview().over }} over</span> }
+          @if (overview().warning > 0) { <span class="chip warn">{{ overview().warning }} close</span> }
+          @if (overview().ok > 0) { <span class="chip ok">{{ overview().ok }} on track</span> }
         </div>
       </div>
-      <div class="field">
-        <label>Limit</label>
-        <input type="number" formControlName="limit" min="0" />
+      <div class="progress">
+        <div class="progress-fill" [class.ok]="overview().percent < 85" [class.warn]="overview().percent >= 85 && overview().percent < 100" [class.over]="overview().percent >= 100" [style.width.%]="overview().percent"></div>
       </div>
-      <div class="field">
-        <label>Period</label>
-        <select formControlName="period">
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Scope</label>
-        <select formControlName="scope">
-          @if (hasHousehold()) {
-            <option value="shared">Shared</option>
-          }
-          <option value="personal">Personal</option>
-        </select>
-        @if (!hasHousehold()) {
-          <small>Shared budgets unlock after joining or creating a household.</small>
+      <p class="small muted">
+        @if (overview().remaining >= 0) {
+          {{ overview().remaining | money:'none' }} left across your monthly budgets.
+        } @else {
+          {{ -overview().remaining | money:'none' }} over your combined monthly limits.
         }
-      </div>
-      <button class="primary" type="submit">Save budget</button>
-    </form>
+      </p>
+    </section>
   }
 
-  <section class="budget-section">
-    <div class="section-header">
-      <h2>Shared - {{ householdName() }}</h2>
-      <span>{{ sharedBudgetSummaries().length }} budgets</span>
-    </div>
-    <div class="grid">
-      @for (item of sharedBudgetSummaries(); track item.budget.id) {
-        <div class="card budget-card">
-          <div class="title">
-            <span class="dot" [style.background]="item.category?.color"></span>
-            <div>
-              <h3>{{ item.category?.name || 'Category' }}</h3>
-              <p>{{ item.budget.period }}</p>
+  @if (categoriesOpen()) {
+    <section class="card flush">
+      <div class="card-header">
+        <div>
+          <h2>Categories</h2>
+          <span class="hint">Rename, recolor, or remove unused ones.</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost" (click)="editingCategory.set(null); showCategoryModal.set(true)"><app-icon name="plus" size="16" /> New</button>
+      </div>
+      <div class="list">
+        @for (row of categoryRows(); track row.category.id) {
+          <div class="list-row">
+            <span class="swatch" [style.background]="row.category.color">{{ row.category.name.charAt(0).toUpperCase() }}</span>
+            <div class="list-main">
+              <span class="list-title">{{ row.category.name }}</span>
+              <span class="list-meta">
+                {{ row.usage.transactions }} transaction{{ row.usage.transactions === 1 ? '' : 's' }} · {{ row.usage.budgets }} budget{{ row.usage.budgets === 1 ? '' : 's' }}
+                @if (row.usage.recurring > 0) { · {{ row.usage.recurring }} recurring }
+                · default {{ row.category.defaultScope }}
+              </span>
             </div>
-            <div class="card-actions">
-              <button
-                type="button"
-                class="icon-btn"
-                (click)="editingBudgetId() === item.budget.id ? cancelEditBudget() : startEditBudget(item.budget.id)"
-                [attr.aria-label]="editingBudgetId() === item.budget.id ? 'Cancel edit budget' : 'Edit budget'"
-              >
-                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="icon-btn danger" (click)="requestRemoveBudget(item.budget.id)" aria-label="Delete budget">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
+            <button type="button" class="btn-icon" (click)="editCategory(row.category)" aria-label="Edit category"><app-icon name="edit" /></button>
+            @if (row.usage.transactions === 0 && row.usage.budgets === 0 && row.usage.recurring === 0) {
+              <button type="button" class="btn-icon danger" (click)="requestDeleteCategory(row.category.id)" aria-label="Delete category"><app-icon name="trash" /></button>
+            }
+          </div>
+        }
+        @if (categoryRows().length === 0) {
+          <div class="empty compact"><p>No categories yet. Create one to start filing expenses.</p></div>
+        }
+      </div>
+    </section>
+  }
+
+  @if (summaries().length === 0) {
+    <section class="card">
+      <div class="empty">
+        <span class="empty-icon"><app-icon name="target" /></span>
+        <h3>No budgets yet</h3>
+        <p>A budget is a spending limit for one category. Set one and TwoCents tells you how much is left and whether you're on pace.</p>
+        <button type="button" class="btn btn-primary" (click)="openCreate()">Create your first budget</button>
+      </div>
+    </section>
+  }
+
+  @if (monthly().length > 0) {
+    <section class="section">
+      <div class="section-title">
+        <h2>Monthly</h2>
+        <span class="small faint">{{ monthLabel() }}</span>
+      </div>
+      <div class="budget-grid">
+        @for (item of monthly(); track item.budget.id) {
+          <ng-container *ngTemplateOutlet="budgetCard; context: { $implicit: item }" />
+        }
+      </div>
+    </section>
+  }
+
+  @if (weekly().length > 0) {
+    <section class="section">
+      <div class="section-title">
+        <h2>Weekly</h2>
+        <span class="small faint">{{ weekLabel() }}</span>
+      </div>
+      <div class="budget-grid">
+        @for (item of weekly(); track item.budget.id) {
+          <ng-container *ngTemplateOutlet="budgetCard; context: { $implicit: item }" />
+        }
+      </div>
+    </section>
+  }
+
+  <ng-template #budgetCard let-item>
+    <article class="card budget" [id]="'budget-' + item.budget.id" [class.expanded]="expandedId() === item.budget.id">
+      <div class="budget-head">
+        <button type="button" class="budget-title" (click)="toggleExpand(item.budget.id)">
+          <span class="swatch" [style.background]="item.category?.color ?? 'var(--text-3)'">{{ (item.category?.name ?? '?').charAt(0).toUpperCase() }}</span>
+          <span class="budget-name">
+            <span class="truncate">{{ item.category?.name ?? 'Category' }}</span>
+            <span class="budget-tags">
+              @if (hasHousehold()) {
+                <span class="chip">{{ item.budget.scope === 'shared' ? 'Shared' : memberCount() > 1 && item.ownerName ? item.ownerName : 'Personal' }}</span>
+              }
+              <span class="chip" [class.ok]="item.status === 'ok'" [class.warn]="item.status === 'warning'" [class.over]="item.status === 'over'">{{ statusLabel(item.status) }}</span>
+            </span>
+          </span>
+        </button>
+        <div class="budget-actions">
+          <button type="button" class="btn-icon" (click)="openEdit(item.budget)" aria-label="Edit budget"><app-icon name="edit" /></button>
+          <button type="button" class="btn-icon danger" (click)="requestDelete(item.budget.id)" aria-label="Delete budget"><app-icon name="trash" /></button>
+        </div>
+      </div>
+
+      <div class="budget-nums">
+        <span class="spent">{{ item.spent | money:'none' }}</span>
+        <span class="faint">of {{ item.budget.limit | money:'none' }}</span>
+      </div>
+
+      <div class="progress" [title]="'Pace marker: where you would be if you spent evenly'">
+        <div class="progress-fill" [class.ok]="item.status === 'ok'" [class.warn]="item.status === 'warning'" [class.over]="item.status === 'over'" [style.width.%]="item.percent"></div>
+        @if (item.daysLeft > 0 && pacePercent(item) > 0 && pacePercent(item) < 100) {
+          <span class="progress-marker" [style.left.%]="pacePercent(item)"></span>
+        }
+      </div>
+
+      <div class="budget-foot">
+        @if (item.remaining >= 0) {
+          <span><strong>{{ item.remaining | money:'none' }}</strong> left</span>
+        } @else {
+          <span class="neg"><strong>{{ -item.remaining | money:'none' }}</strong> over</span>
+        }
+        @if (item.daysLeft > 0) {
+          <span>{{ item.daysLeft }} day{{ item.daysLeft === 1 ? '' : 's' }} left</span>
+          @if (item.safePerDay > 0) {
+            <span><strong>{{ item.safePerDay | money }}</strong>/day keeps you under</span>
+          }
+        } @else {
+          <span>Period ended</span>
+        }
+      </div>
+
+      @if (expandedId() === item.budget.id) {
+        <div class="budget-detail">
+          <div class="spread">
+            <span class="small muted">{{ item.transactions.length }} transaction{{ item.transactions.length === 1 ? '' : 's' }} · {{ item.rangeLabel }}</span>
+            <button type="button" class="link-btn small" (click)="viewTransactions(item)">Open in Activity</button>
+          </div>
+          @if (item.transactions.length > 0) {
+            <div class="list detail-list">
+              @for (tx of item.transactions.slice(0, 8); track tx.id) {
+                <app-tx-row [transaction]="tx" [showCategory]="false" [showScope]="false" [showDate]="true" />
+              }
+            </div>
+          } @else {
+            <p class="small faint">Nothing spent in this category yet this period.</p>
+          }
+        </div>
+      }
+    </article>
+  </ng-template>
+
+  @if (creating() || editing()) {
+    <app-sheet [title]="editing() ? 'Edit budget' : 'New budget'" subtitle="Budgets reset at the start of every calendar month or week." (closed)="closeForm()">
+      <form class="form" [formGroup]="form" (ngSubmit)="save()">
+        <div class="field">
+          <label for="b-category">Category</label>
+          <select id="b-category" formControlName="categoryId" (change)="onCategoryChange($event)">
+            @for (category of expenseCategories(); track category.id) {
+              <option [value]="category.id">{{ category.name }}</option>
+            }
+            <option value="__new__">+ New category…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="b-limit">Limit</label>
+          <div class="amount-field big">
+            <span class="prefix">{{ currency.symbol() }}</span>
+            <input id="b-limit" type="number" inputmode="decimal" formControlName="limit" min="0" step="1" placeholder="0" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <span class="field-label">Period</span>
+            <div class="segmented block">
+              <button type="button" [class.active]="form.value.period === 'monthly'" (click)="form.patchValue({ period: 'monthly' })">Monthly</button>
+              <button type="button" [class.active]="form.value.period === 'weekly'" (click)="form.patchValue({ period: 'weekly' })">Weekly</button>
             </div>
           </div>
-
-          @if (editingBudgetId() === item.budget.id) {
-            <form class="inline-editor" [formGroup]="editBudgetForm" (ngSubmit)="saveBudgetEdit(item.budget.id)">
-              <div class="field">
-                <label>Category</label>
-                <div class="category-row">
-                  <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
-                    @for (category of categories(); track category.id) {
-                      <option [value]="category.id">{{ category.name }}</option>
-                    }
-                    <option value="__new__">+ New category</option>
-                  </select>
-                  <button type="button" class="tiny-icon" (click)="openRenameCategoryForEdit()" aria-label="Rename category">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                  </button>
-                </div>
-              </div>
-              <div class="split">
-                <div class="field">
-                  <label>Period</label>
-                  <select formControlName="period">
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label>Scope</label>
-                  <select formControlName="scope">
-                    @if (hasHousehold()) {
-                      <option value="shared">Shared</option>
-                    }
-                    <option value="personal">Personal</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field amount-editor">
-                <div class="amount-head">
-                  <label>Budget limit</label>
-                  <span>${{ (editBudgetForm.value.limit ?? 0) | number: '1.0-2' }}</span>
-                </div>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  formControlName="limit"
-                  (input)="setEditLimit($any($event.target).value)"
-                />
-              </div>
-              <div class="editor-actions">
-                <button type="button" class="ghost" (click)="cancelEditBudget()">Cancel</button>
-                <button type="submit" class="primary">Save</button>
-              </div>
-            </form>
-          } @else {
-            <div class="stats">
-              <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
-              <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
-              <div class="track">
-                <div class="fill" [style.width.%]="item.percent" [style.background]="budgetUsageColor(item.percent)"></div>
+          @if (hasHousehold()) {
+            <div class="field">
+              <span class="field-label">Counts</span>
+              <div class="segmented block">
+                <button type="button" [class.active]="form.value.scope === 'shared'" (click)="form.patchValue({ scope: 'shared' })">Shared</button>
+                <button type="button" [class.active]="form.value.scope === 'personal'" (click)="form.patchValue({ scope: 'personal' })">My personal</button>
               </div>
             </div>
           }
         </div>
-      }
-      @if (sharedBudgetSummaries().length === 0) {
-        <p class="empty">No shared budgets yet.</p>
-      }
-    </div>
-  </section>
-
-  <section class="budget-section">
-    <div class="section-header">
-      <h2>Personal</h2>
-      <span>{{ personalBudgetSummaries().length }} budgets</span>
-    </div>
-    <div class="grid">
-      @for (item of personalBudgetSummaries(); track item.budget.id) {
-        <div class="card budget-card">
-          <div class="title">
-            <span class="dot" [style.background]="item.category?.color"></span>
-            <div>
-              <h3>{{ item.category?.name || 'Category' }}</h3>
-              <p>{{ item.budget.period }}</p>
-            </div>
-            <div class="card-actions">
-              <button
-                type="button"
-                class="icon-btn"
-                (click)="editingBudgetId() === item.budget.id ? cancelEditBudget() : startEditBudget(item.budget.id)"
-                [attr.aria-label]="editingBudgetId() === item.budget.id ? 'Cancel edit budget' : 'Edit budget'"
-              >
-                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="icon-btn danger" (click)="requestRemoveBudget(item.budget.id)" aria-label="Delete budget">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-            </div>
-          </div>
-
-          @if (editingBudgetId() === item.budget.id) {
-            <form class="inline-editor" [formGroup]="editBudgetForm" (ngSubmit)="saveBudgetEdit(item.budget.id)">
-              <div class="field">
-                <label>Category</label>
-                <div class="category-row">
-                  <select formControlName="categoryId" (change)="onEditCategorySelect($event)">
-                    @for (category of categories(); track category.id) {
-                      <option [value]="category.id">{{ category.name }}</option>
-                    }
-                    <option value="__new__">+ New category</option>
-                  </select>
-                  <button type="button" class="tiny-icon" (click)="openRenameCategoryForEdit()" aria-label="Rename category">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                  </button>
-                </div>
-              </div>
-              <div class="split">
-                <div class="field">
-                  <label>Period</label>
-                  <select formControlName="period">
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label>Scope</label>
-                  <select formControlName="scope">
-                    @if (hasHousehold()) {
-                      <option value="shared">Shared</option>
-                    }
-                    <option value="personal">Personal</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field amount-editor">
-                <div class="amount-head">
-                  <label>Budget limit</label>
-                  <span>${{ (editBudgetForm.value.limit ?? 0) | number: '1.0-2' }}</span>
-                </div>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  formControlName="limit"
-                  (input)="setEditLimit($any($event.target).value)"
-                />
-              </div>
-              <div class="editor-actions">
-                <button type="button" class="ghost" (click)="cancelEditBudget()">Cancel</button>
-                <button type="submit" class="primary">Save</button>
-              </div>
-            </form>
-          } @else {
-            <div class="stats">
-              <div class="amount">${{ item.spent | number: '1.0-0' }} / {{ item.budget.limit | number: '1.0-0' }}</div>
-              <div class="sub">Remaining: ${{ item.remaining | number: '1.0-0' }}</div>
-              <div class="track">
-                <div class="fill" [style.width.%]="item.percent" [style.background]="budgetUsageColor(item.percent)"></div>
-              </div>
-            </div>
-          }
+        @if (hasHousehold()) {
+          <p class="hint">
+            {{ form.value.scope === 'shared' ? 'Shared budgets count every member\'s shared expenses in this category.' : 'Personal budgets count only your own personal expenses in this category.' }}
+          </p>
+        }
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" (click)="closeForm()">Cancel</button>
+          <button type="submit" class="btn btn-primary">{{ editing() ? 'Save' : 'Create budget' }}</button>
         </div>
-      }
-      @if (personalBudgetSummaries().length === 0) {
-        <p class="empty">No personal budgets yet.</p>
-      }
-    </div>
-  </section>
+      </form>
+    </app-sheet>
+  }
 
-  @if (showCategoryModal()) {
-    <app-category-modal
-      (created)="onCategoryCreated($event)"
-      (closed)="closeCategoryModal()"
+  @if (showCategoryModal() || editingCategory()) {
+    <app-category-modal [category]="editingCategory()" (saved)="onCategorySaved($event)" (closed)="showCategoryModal.set(false); editingCategory.set(null)" />
+  }
+
+  @if (confirmDeleteId()) {
+    <app-confirm-modal
+      title="Delete this budget?"
+      message="Only the limit is removed. Your transactions and category stay exactly as they are."
+      confirmLabel="Delete budget"
+      [danger]="true"
+      (dismiss)="confirmDeleteId.set(null)"
+      (confirm)="confirmDelete()"
     />
   }
 
-  @if (showRenameCategoryModal()) {
-    <div class="overlay" (click)="closeRenameCategoryModal()"></div>
-    <div class="rename-modal">
-      <h3>Rename category</h3>
-      <form [formGroup]="renameCategoryForm" (ngSubmit)="saveCategoryRename()">
-        <input type="text" formControlName="name" placeholder="Category name" />
-        <div class="rename-actions">
-          <button type="button" class="ghost" (click)="closeRenameCategoryModal()">Cancel</button>
-          <button type="submit" class="primary">Save</button>
-        </div>
-      </form>
-    </div>
-  }
-
-  @if (confirmDeleteBudgetId()) {
+  @if (confirmDeleteCategoryId()) {
     <app-confirm-modal
-      title="Delete budget?"
-      message="This budget will be removed immediately and cannot be recovered."
+      title="Delete this category?"
+      message="It isn't used by any transaction, budget or recurring series."
       confirmLabel="Delete"
       [danger]="true"
-      (cancel)="cancelRemoveBudget()"
-      (confirm)="removeBudget()"
+      (dismiss)="confirmDeleteCategoryId.set(null)"
+      (confirm)="confirmDeleteCategory()"
     />
   }
 </div>

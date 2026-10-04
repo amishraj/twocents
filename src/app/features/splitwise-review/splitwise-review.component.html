@@ -1,77 +1,63 @@
-<div class="review-page">
-  <header class="page-header">
-    <div class="header-left">
-      <button type="button" class="back-btn" (click)="goBack()">Back</button>
-      <div>
-        <h1>Review Expenses</h1>
-        <p class="subtitle">{{ rows().length }} expenses found</p>
-      </div>
+<div class="page">
+  <div class="page-header">
+    <div>
+      <button type="button" class="link-btn back" (click)="goBack()"><app-icon name="chevron-left" size="16" /> Back to Splitwise</button>
+      <h1>Review before importing</h1>
+      <p class="subtitle">{{ rows().length }} expense{{ rows().length === 1 ? '' : 's' }} found. Amounts are your share, not the full bill.</p>
     </div>
-  </header>
-
-  <div class="success-toast" *ngIf="imported() > 0">
-    <p>Successfully imported {{ imported() }} transactions!</p>
   </div>
 
-  <ng-container *ngIf="imported() === 0">
-    <section class="table-section">
-      <div class="table-header">
-        <label class="checkbox-col">
-          <input
-            type="checkbox"
-            [checked]="selectAll()"
-            (change)="toggleAll()"
-          />
-          <span>Select All</span>
+  @if (imported() > 0) {
+    <section class="card">
+      <div class="empty">
+        <span class="empty-icon" style="background: var(--pos-soft); color: var(--pos)"><app-icon name="check" /></span>
+        <h3>Imported {{ imported() }} transaction{{ imported() === 1 ? '' : 's' }}</h3>
+        <p>They're in your Activity as personal expenses, filed under the categories you chose.</p>
+      </div>
+    </section>
+  } @else if (rows().length === 0) {
+    <section class="card">
+      <div class="empty">
+        <h3>Nothing new to import</h3>
+        <p>Every expense in this range is either a settle-up payment or has already been imported.</p>
+        <button type="button" class="btn btn-ghost" (click)="goBack()">Back</button>
+      </div>
+    </section>
+  } @else {
+    <section class="card flush">
+      <div class="table-head">
+        <label class="check">
+          <input type="checkbox" [checked]="selectAll()" (change)="toggleAll()" />
+          <span>Select all</span>
         </label>
-        <span class="date-col">Date</span>
-        <span class="desc-col">Description</span>
-        <span class="amount-col">Amount</span>
-        <span class="cat-col">Category</span>
-        <span class="source-col">Source</span>
+        <span class="faint small">{{ selectedCount() }} of {{ rows().length }} selected</span>
       </div>
-
-      <div class="table-body">
-        <div class="table-row" *ngFor="let row of rows(); trackBy: trackRow">
-          <label class="checkbox-col">
-            <input
-              type="checkbox"
-              [checked]="row.selected"
-              (change)="toggleRow(i)"
-            />
-          </label>
-          <span class="date-col">{{ row.expense.date | date:'shortDate' }}</span>
-          <span class="desc-col">{{ row.expense.description }}</span>
-          <span class="amount-col">${{ row.amount | number:'1.2-2' }}</span>
-          <span class="cat-col">
-            <select
-              [ngModel]="row.categoryId"
-              (ngModelChange)="setCategory(i, $event)"
-            >
-              <option *ngFor="let cat of categories()" [value]="cat.id">{{ cat.name }}</option>
+      <div class="list">
+        @for (row of rows(); track row.expense.id; let i = $index) {
+          <div class="list-row review" [class.off]="!row.selected">
+            <label class="check">
+              <input type="checkbox" [checked]="row.selected" (change)="toggleRow(i)" [attr.aria-label]="'Import ' + row.expense.description" />
+            </label>
+            <div class="list-main">
+              <span class="list-title">{{ row.expense.description }}</span>
+              <span class="list-meta">{{ row.expense.date | date: 'MMM d, y' }} · {{ getSource(row.expense) }} · Splitwise: {{ row.expense.category.name }}</span>
+            </div>
+            <select class="input cat-select" [ngModel]="row.categoryId" (ngModelChange)="setCategory(i, $event)" aria-label="Category">
+              @for (cat of categories(); track cat.id) {
+                <option [value]="cat.id">{{ cat.name }}</option>
+              }
             </select>
-          </span>
-          <span class="source-col">{{ getSource(row.expense) }}</span>
-        </div>
+            <span class="list-amount">{{ row.amount | money:'always' }}</span>
+          </div>
+        }
       </div>
     </section>
 
-    <section class="import-section">
-      <div class="import-summary">
-        <p>
-          <strong>{{ selectedCount() }}</strong> of
-          <strong>{{ rows().length }}</strong> selected for import
-        </p>
-      </div>
-      <button
-        type="button"
-        class="primary-action import-btn"
-        (click)="importSelected()"
-        [disabled]="loading() || selectedCount() === 0"
-      >
-        <span *ngIf="loading()">Importing...</span>
-        <span *ngIf="!loading()">Import Selected ({{ selectedCount() }})</span>
+    <div class="import-bar card tight">
+      <span><strong>{{ selectedCount() }}</strong> selected · {{ selectedTotal() | money:'always' }}</span>
+      <button type="button" class="btn btn-primary" (click)="importSelected()" [disabled]="loading() || selectedCount() === 0">
+        {{ loading() ? 'Importing…' : 'Import ' + selectedCount() + ' transaction' + (selectedCount() === 1 ? '' : 's') }}
       </button>
-    </section>
-  </ng-container>
+    </div>
+  }
 </div>

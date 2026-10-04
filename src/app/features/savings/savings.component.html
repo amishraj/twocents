@@ -2,187 +2,168 @@
   <div class="page-header">
     <div>
       <h1>Savings</h1>
-      <p>Track progress toward your shared goals.</p>
+      <p class="subtitle">Goals you're putting money aside for, and how close you are.</p>
     </div>
-    <button class="primary" type="button" (click)="toggleForm()">Add goal</button>
+    <button type="button" class="btn btn-primary" (click)="openCreate()"><app-icon name="plus" /> New goal</button>
   </div>
 
-  @if (showForm) {
-    <form class="card form" [formGroup]="form" (ngSubmit)="addGoal()">
-      <div class="field">
-        <label>Goal name</label>
-        <input type="text" formControlName="name" />
+  @if (goals().length > 0) {
+    <section class="stat-grid cols-3">
+      <div class="stat">
+        <span class="stat-label">Saved so far</span>
+        <span class="stat-value">{{ totals().saved | money:'none' }}</span>
+        <span class="stat-delta">Across {{ goals().length }} goal{{ goals().length === 1 ? '' : 's' }}</span>
       </div>
-      <div class="grid">
-        <div class="field">
-          <label>Target</label>
-          <input type="number" formControlName="targetAmount" min="0" />
-        </div>
-        <div class="field">
-          <label>Current</label>
-          <input type="number" formControlName="currentAmount" min="0" />
-        </div>
+      <div class="stat">
+        <span class="stat-label">Target</span>
+        <span class="stat-value">{{ totals().target | money:'none' }}</span>
+        <span class="stat-delta">{{ (totals().target - totals().saved) | money:'none' }} to go</span>
       </div>
-      <div class="grid">
-        <div class="field">
-          <label>Account</label>
-          <input type="text" formControlName="accountName" />
-        </div>
-        <div class="field">
-          <label>Scope</label>
-          <select formControlName="scope">
-            @if (hasHousehold()) {
-              <option value="shared">Shared</option>
+      <div class="stat">
+        <span class="stat-label">Progress</span>
+        <span class="stat-value">{{ totals().percent }}%</span>
+        <span class="stat-delta">{{ totals().reached }} goal{{ totals().reached === 1 ? '' : 's' }} reached</span>
+      </div>
+    </section>
+
+    <div class="goal-grid">
+      @for (item of goals(); track item.goal.id) {
+        <article class="card goal">
+          <div class="goal-head">
+            <div class="goal-name">
+              <h3>{{ item.goal.name }}</h3>
+              <span class="small faint">
+                {{ item.goal.accountName || 'No account' }}
+                @if (hasHousehold()) { · {{ item.goal.scope === 'shared' ? 'Shared' : 'Personal' }} }
+                @if (item.dueLabel) { · by {{ item.dueLabel }} }
+              </span>
+            </div>
+            <div class="row">
+              <span class="chip" [class.ok]="item.status === 'done' || item.status === 'ok'" [class.warn]="item.status === 'warn'">{{ item.statusLabel }}</span>
+              <button type="button" class="btn-icon" (click)="openEdit(item.goal)" aria-label="Edit goal"><app-icon name="edit" /></button>
+              <button type="button" class="btn-icon danger" (click)="requestDelete(item.goal.id)" aria-label="Delete goal"><app-icon name="trash" /></button>
+            </div>
+          </div>
+
+          <div class="goal-nums">
+            <span class="saved">{{ item.goal.currentAmount | money:'none' }}</span>
+            <span class="faint">of {{ item.goal.targetAmount | money:'none' }}</span>
+          </div>
+          <div class="progress">
+            <div class="progress-fill" [class.ok]="item.status === 'done' || item.status === 'ok'" [class.warn]="item.status === 'warn'" [style.width.%]="item.percent"></div>
+          </div>
+          <div class="goal-foot">
+            @if (item.remaining > 0) {
+              <span><strong>{{ item.remaining | money:'none' }}</strong> to go</span>
+              @if (item.monthlyNeeded !== null && item.monthlyNeeded > 0) {
+                <span>about <strong>{{ item.monthlyNeeded | money:'none' }}</strong>/month to hit the date</span>
+              }
+            } @else {
+              <span class="pos">Goal reached 🎉</span>
             }
-            <option value="personal">Personal</option>
-          </select>
-          @if (!hasHousehold()) {
-            <small>Shared savings unlock after joining or creating a household.</small>
-          }
-        </div>
+          </div>
+
+          <button type="button" class="btn btn-ghost btn-block" (click)="openContribute(item.goal)">
+            <app-icon name="plus" /> Add money
+          </button>
+        </article>
+      }
+    </div>
+  } @else {
+    <section class="card">
+      <div class="empty">
+        <span class="empty-icon"><app-icon name="piggy" /></span>
+        <h3>No savings goals yet</h3>
+        <p>Set a target, log what you put aside, and watch the bar fill up. Contributions can also be logged as transactions so your spending picture stays honest.</p>
+        <button type="button" class="btn btn-primary" (click)="openCreate()">Create a goal</button>
       </div>
-      <button class="primary" type="submit">Save goal</button>
-    </form>
+    </section>
   }
 
-  <div class="grid">
-    @for (goal of savingsGoals(); track goal.id) {
-      <div class="card">
-        <div class="goal-header">
-          <div>
-            <h3>{{ goal.name }}</h3>
-            <p>{{ goal.accountName }} - {{ goal.scope }}</p>
+  @if (creating() || editing()) {
+    <app-sheet [title]="editing() ? 'Edit goal' : 'New savings goal'" (closed)="closeForm()">
+      <form class="form" [formGroup]="form" (ngSubmit)="save()">
+        <div class="field">
+          <label for="g-name">Goal</label>
+          <input id="g-name" type="text" formControlName="name" placeholder="Emergency fund, holiday, new laptop…" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="g-target">Target</label>
+            <div class="amount-field">
+              <span class="prefix">{{ currency.symbol() }}</span>
+              <input id="g-target" type="number" inputmode="decimal" formControlName="targetAmount" min="0" step="1" />
+            </div>
           </div>
-          <div class="goal-meta">
-            <span class="status-chip" [ngClass]="goalTone(goal.id)">{{ goalStatus(goal.id) }}</span>
-            <div class="amount">${{ goal.currentAmount | number: '1.0-0' }}</div>
-            <div class="card-actions">
-              <button
-                class="icon-btn"
-                type="button"
-                (click)="editingGoalId() === goal.id ? cancelEditGoal() : startEditGoal(goal.id)"
-                [attr.aria-label]="editingGoalId() === goal.id ? 'Cancel edit goal' : 'Edit goal'"
-              >
-                <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              </button>
-              @if (goal.currentAmount <= 0) {
-                <button
-                  class="icon-btn danger"
-                  type="button"
-                  (click)="requestRemoveGoal(goal.id)"
-                  aria-label="Delete savings goal"
-                >
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M7 7l.6 12a1 1 0 0 0 1 .9h6.8a1 1 0 0 0 1-.9L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                </button>
-              } @else {
-                <div class="delete-lock-wrapper" tabindex="0" aria-label="Delete is locked while funds are non-zero">
-                  <span class="delete-locked">
-                    <svg viewBox="0 0 24 24" fill="none"><rect x="6" y="10" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 10V8a3 3 0 1 1 6 0v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-                    Delete
-                  </span>
-                  <span class="delete-lock-popover">Deleting is locked while funds are non-zero.</span>
-                </div>
-              }
+          <div class="field">
+            <label for="g-current">Already saved</label>
+            <div class="amount-field">
+              <span class="prefix">{{ currency.symbol() }}</span>
+              <input id="g-current" type="number" inputmode="decimal" formControlName="currentAmount" min="0" step="1" />
             </div>
           </div>
         </div>
-
-        @if (editingGoalId() === goal.id) {
-          <form class="inline-editor" [formGroup]="editGoalForm" (ngSubmit)="saveGoalEdit(goal.id)">
-            <div class="split">
-              <div class="field">
-                <label>Goal name</label>
-                <input type="text" formControlName="name" />
-              </div>
-              <div class="field">
-                <label>Account</label>
-                <input type="text" formControlName="accountName" />
-              </div>
-            </div>
-
-            <div class="field">
-              <label>Scope</label>
-              <select formControlName="scope">
-                @if (hasHousehold()) {
-                  <option value="shared">Shared</option>
-                }
-                <option value="personal">Personal</option>
-              </select>
-            </div>
-
-            <div class="field amount-editor">
-              <div class="amount-head">
-                <label>Current amount</label>
-                <span>${{ (editGoalForm.value.currentAmount ?? 0) | number: '1.0-2' }}</span>
-              </div>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                formControlName="currentAmount"
-                (input)="setEditCurrentAmount($any($event.target).value)"
-              />
-            </div>
-
-            <div class="field amount-editor">
-              <div class="amount-head">
-                <label>Target amount</label>
-                <span>${{ (editGoalForm.value.targetAmount ?? 0) | number: '1.0-2' }}</span>
-              </div>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                formControlName="targetAmount"
-                (input)="setEditTargetAmount($any($event.target).value)"
-              />
-            </div>
-
-            <div class="editor-actions">
-              <button class="ghost" type="button" (click)="cancelEditGoal()">Cancel</button>
-              <button class="primary" type="submit">Save</button>
-            </div>
-          </form>
-        } @else {
-          <div class="progress">
-            <div class="track">
-              <div
-                class="fill"
-                [style.background]="goalProgressColor(goal.id)"
-                [style.width.%]="goalProgress(goal.id)"
-              ></div>
-            </div>
-            <div class="meta">
-              {{ goal.currentAmount | number: '1.0-0' }} of {{ goal.targetAmount | number: '1.0-0' }}
-            </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="g-account">Where it's kept</label>
+            <input id="g-account" type="text" formControlName="accountName" placeholder="Optional, e.g. Ally Savings" />
           </div>
-
-          <div class="contribution">
-            <label>Add amount toward this goal</label>
-            <div class="contribution-row">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                [value]="contributionInput()[goal.id] || 0"
-                (input)="setContribution(goal.id, $any($event.target).value)"
-              />
-              <button class="primary" type="button" (click)="addContribution(goal.id)">Add</button>
+          <div class="field">
+            <label for="g-due">Target date</label>
+            <input id="g-due" type="date" formControlName="dueDate" />
+            <span class="hint">Optional. Used to suggest a monthly amount.</span>
+          </div>
+        </div>
+        @if (hasHousehold()) {
+          <div class="field">
+            <span class="field-label">Scope</span>
+            <div class="segmented block">
+              <button type="button" [class.active]="form.value.scope === 'shared'" (click)="form.patchValue({ scope: 'shared' })">Shared</button>
+              <button type="button" [class.active]="form.value.scope === 'personal'" (click)="form.patchValue({ scope: 'personal' })">Personal</button>
             </div>
           </div>
         }
-      </div>
-    }
-  </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" (click)="closeForm()">Cancel</button>
+          <button type="submit" class="btn btn-primary">{{ editing() ? 'Save' : 'Create goal' }}</button>
+        </div>
+      </form>
+    </app-sheet>
+  }
 
-  @if (confirmDeleteGoalId()) {
+  @if (contributingTo(); as goal) {
+    <app-sheet [title]="'Add money to ' + goal.name" (closed)="contributingTo.set(null)">
+      <form class="form" [formGroup]="contributionForm" (ngSubmit)="contribute()">
+        <div class="field">
+          <label for="c-amount">Amount</label>
+          <div class="amount-field big">
+            <span class="prefix">{{ currency.symbol() }}</span>
+            <input id="c-amount" type="number" inputmode="decimal" formControlName="amount" min="0" step="0.01" placeholder="0.00" />
+          </div>
+        </div>
+        <div class="switch-row">
+          <div class="switch-text">
+            <span>Also log as a transaction</span>
+            <span>Records it under the Savings category so your spending totals include it.</span>
+          </div>
+          <button type="button" class="switch" [class.on]="contributionForm.value.logTransaction" role="switch" [attr.aria-checked]="contributionForm.value.logTransaction" (click)="contributionForm.patchValue({ logTransaction: !contributionForm.value.logTransaction })" aria-label="Also log as a transaction"></button>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" (click)="contributingTo.set(null)">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add money</button>
+        </div>
+      </form>
+    </app-sheet>
+  }
+
+  @if (confirmDeleteId()) {
     <app-confirm-modal
-      title="Delete savings goal?"
-      message="This savings goal will be removed immediately."
-      confirmLabel="Delete"
+      title="Delete this goal?"
+      message="The goal and its progress are removed. Any contribution transactions you logged stay in your ledger."
+      confirmLabel="Delete goal"
       [danger]="true"
-      (cancel)="cancelRemoveGoal()"
-      (confirm)="removeGoal()"
+      (dismiss)="confirmDeleteId.set(null)"
+      (confirm)="confirmDelete()"
     />
   }
 </div>

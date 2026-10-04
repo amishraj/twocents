@@ -1,20 +1,33 @@
-<div class="page">
+<div class="page narrow">
+  <div class="page-header">
+    <div>
+      <h1>Admin</h1>
+      <p class="subtitle">Destructive maintenance tools. Only admins see this page.</p>
+    </div>
+  </div>
+
   <section class="card">
-    <h1>Admin Reset</h1>
-    <p>
-      Owner-only tool. This clears all budgeting data and keeps your user account.
-    </p>
-
-    <button type="button" class="danger" (click)="resetAllData()" [disabled]="resetInFlight">
-      {{ resetInFlight ? 'Resetting...' : 'Reset all data (keep my user)' }}
-    </button>
-
-    <button type="button" class="danger danger-outline" (click)="nukeEverything()" [disabled]="nukeInFlight">
-      {{ nukeInFlight ? 'Nuking...' : 'Nuke all data + delete my account' }}
-    </button>
-
+    <div class="setting">
+      <div class="setting-text">
+        <span>Reset all data, keep my account</span>
+        <span>Soft-deletes budgets, categories, transactions, savings, investments, invites and recurring series. Your sign-in stays.</span>
+      </div>
+      <button type="button" class="btn btn-danger" (click)="resetAllData()" [disabled]="resetInFlight">
+        {{ resetInFlight ? 'Resetting…' : 'Reset data' }}
+      </button>
+    </div>
+    <hr class="divider" />
+    <div class="setting">
+      <div class="setting-text">
+        <span>Nuke everything and delete my account</span>
+        <span>Wipes data and deletes the current account. You'll be signed out.</span>
+      </div>
+      <button type="button" class="btn btn-danger" (click)="nukeEverything()" [disabled]="nukeInFlight">
+        {{ nukeInFlight ? 'Nuking…' : 'Nuke + delete account' }}
+      </button>
+    </div>
     @if (message) {
-      <p class="notice">{{ message }}</p>
+      <p class="notice warn">{{ message }}</p>
     }
   </section>
 </div>

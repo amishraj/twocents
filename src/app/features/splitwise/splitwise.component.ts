@@ -1,13 +1,15 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SplitwiseService } from '../../core/services/splitwise.service';
+import { formatLocal } from '../../core/utils/dates';
+import { IconComponent } from '../../shared/icon/icon.component';
 
 @Component({
   selector: 'app-splitwise',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [DatePipe, FormsModule, IconComponent],
   templateUrl: './splitwise.component.html',
   styleUrl: './splitwise.component.scss'
 })
@@ -50,8 +52,8 @@ export class SplitwiseComponent implements OnInit {
   private setDefaultDateRange(): void {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    this.datedAfter.set(firstDay.toISOString().split('T')[0]);
-    this.datedBefore.set(now.toISOString().split('T')[0]);
+    this.datedAfter.set(formatLocal(firstDay));
+    this.datedBefore.set(formatLocal(now));
   }
 
   connect(): void {

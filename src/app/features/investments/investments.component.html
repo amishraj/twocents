@@ -2,54 +2,108 @@
   <div class="page-header">
     <div>
       <h1>Investments</h1>
-      <p>Where your long-term money is allocated.</p>
+      <p class="subtitle">A simple snapshot of your long-term holdings. Update values whenever you like.</p>
     </div>
-    <button class="primary" type="button" (click)="toggleForm()">Add investment</button>
+    <button type="button" class="btn btn-primary" (click)="openCreate()"><app-icon name="plus" /> Add holding</button>
   </div>
 
-  @if (showForm) {
-    <form class="card form" [formGroup]="form" (ngSubmit)="addEntry()">
-      <div class="field">
-        <label>Investment</label>
-        <input type="text" formControlName="label" placeholder="Vanguard S&P 500" />
+  @if (entries().length > 0) {
+    <section class="card total-card">
+      <div>
+        <span class="stat-label">Total invested</span>
+        <div class="total">{{ total() | money:'none' }}</div>
+        <span class="small faint">{{ entries().length }} holding{{ entries().length === 1 ? '' : 's' }}</span>
       </div>
-      <div class="grid">
-        <div class="field">
-          <label>Amount</label>
-          <input type="number" formControlName="amount" min="0" />
+      <div class="mix">
+        <div class="mix-bar">
+          @for (row of byType(); track row.type) {
+            <span [style.width.%]="row.share * 100" [style.background]="typeColor[row.type]" [title]="typeLabel[row.type]"></span>
+          }
         </div>
-        <div class="field">
-          <label>Account</label>
-          <input type="text" formControlName="accountName" placeholder="Brokerage" />
+        <div class="mix-legend">
+          @for (row of byType(); track row.type) {
+            <span><i class="dot" [style.background]="typeColor[row.type]"></i>{{ typeLabel[row.type] }} <strong>{{ (row.share * 100) | number:'1.0-0' }}%</strong></span>
+          }
         </div>
       </div>
-      <div class="field">
-        <label>Type</label>
-        <select formControlName="type">
-          <option value="brokerage">Brokerage</option>
-          <option value="retirement">Retirement</option>
-          <option value="crypto">Crypto</option>
-          <option value="other">Other</option>
-        </select>
+    </section>
+
+    <section class="card flush">
+      <div class="list">
+        @for (entry of entries(); track entry.id) {
+          <button type="button" class="list-row clickable" (click)="openEdit(entry)">
+            <span class="swatch" [style.background]="typeColor[entry.type]">{{ entry.label.charAt(0).toUpperCase() }}</span>
+            <div class="list-main">
+              <span class="list-title">{{ entry.label }}</span>
+              <span class="list-meta">{{ typeLabel[entry.type] }}{{ entry.accountName ? ' · ' + entry.accountName : '' }}</span>
+            </div>
+            <span class="list-amount">{{ entry.amount | money:'none' }}</span>
+            <app-icon name="chevron-right" size="16" class="faint" />
+          </button>
+        }
       </div>
-      <button class="primary" type="submit">Save investment</button>
-    </form>
+    </section>
+  } @else {
+    <section class="card">
+      <div class="empty">
+        <span class="empty-icon"><app-icon name="trending" /></span>
+        <h3>No holdings yet</h3>
+        <p>Add brokerage, retirement or crypto balances to keep your full picture in one place. Nothing here affects your budgets.</p>
+        <button type="button" class="btn btn-primary" (click)="openCreate()">Add a holding</button>
+      </div>
+    </section>
   }
 
-  <div class="grid cards">
-    @for (entry of appState.investments(); track entry.id) {
-      <div class="card investment-card" [ngClass]="typeTone(entry.type)">
-        <div class="row">
-          <div>
-            <h3>{{ entry.label }}</h3>
-            <p>{{ entry.accountName }}</p>
+  @if (creating() || editing()) {
+    <app-sheet [title]="editing() ? 'Edit holding' : 'Add holding'" (closed)="closeForm()">
+      <form class="form" [formGroup]="form" (ngSubmit)="save()">
+        <div class="field">
+          <label for="i-label">Name</label>
+          <input id="i-label" type="text" formControlName="label" placeholder="Vanguard S&P 500, Roth IRA…" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="i-amount">Current value</label>
+            <div class="amount-field">
+              <span class="prefix">{{ currency.symbol() }}</span>
+              <input id="i-amount" type="number" inputmode="decimal" formControlName="amount" min="0" step="1" />
+            </div>
           </div>
-          <div class="amount">${{ entry.amount | number: '1.0-0' }}</div>
+          <div class="field">
+            <label for="i-account">Account</label>
+            <input id="i-account" type="text" formControlName="accountName" placeholder="Optional" />
+          </div>
         </div>
-        <div class="chip-row">
-          <span class="type-chip" [ngClass]="typeTone(entry.type)">{{ entry.type }}</span>
+        <div class="field">
+          <span class="field-label">Type</span>
+          <div class="chip-row">
+            @for (type of types; track type) {
+              <button type="button" class="chip-btn" [class.active]="form.value.type === type" (click)="form.patchValue({ type })">
+                <span class="dot" [style.background]="typeColor[type]"></span>{{ typeLabel[type] }}
+              </button>
+            }
+          </div>
         </div>
-      </div>
-    }
-  </div>
+        <div class="form-actions">
+          @if (editing(); as entry) {
+            <button type="button" class="btn btn-danger" (click)="requestDelete(entry.id)"><app-icon name="trash" /> Remove</button>
+            <span class="spacer"></span>
+          }
+          <button type="button" class="btn btn-ghost" (click)="closeForm()">Cancel</button>
+          <button type="submit" class="btn btn-primary">{{ editing() ? 'Save' : 'Add holding' }}</button>
+        </div>
+      </form>
+    </app-sheet>
+  }
+
+  @if (confirmDeleteId()) {
+    <app-confirm-modal
+      title="Remove this holding?"
+      message="It is removed from your investments snapshot. Nothing else is affected."
+      confirmLabel="Remove"
+      [danger]="true"
+      (dismiss)="confirmDeleteId.set(null)"
+      (confirm)="confirmDelete()"
+    />
+  }
 </div>

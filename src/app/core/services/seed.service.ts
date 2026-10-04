@@ -10,6 +10,7 @@ import {
   User
 } from '../models/app.models';
 import { createId, createInviteCode } from '../utils/id';
+import { formatLocal, localDateToIso } from '../utils/dates';
 
 const STORAGE_KEYS = {
   users: 'bt_users',
@@ -122,11 +123,12 @@ export class SeedService {
     ];
 
     const nowDate = new Date();
-    const recentDates = Array.from({ length: 10 }).map((_, index) => {
+    const recentLocalDates = Array.from({ length: 10 }).map((_, index) => {
       const date = new Date(nowDate);
       date.setDate(nowDate.getDate() - index);
-      return date.toISOString();
+      return formatLocal(date);
     });
+    const recentDates = recentLocalDates.map((d) => localDateToIso(d));
 
     const transactions: Transaction[] = [
       {
@@ -136,6 +138,7 @@ export class SeedService {
         categoryId: categoryMap.get('Groceries')!,
         paidByUserId: userId,
         date: recentDates[0],
+        localDate: recentLocalDates[0],
         scope: 'shared',
         recurring: false
       },
@@ -146,6 +149,7 @@ export class SeedService {
         categoryId: categoryMap.get('Essentials')!,
         paidByUserId: userId,
         date: recentDates[1],
+        localDate: recentLocalDates[1],
         scope: 'shared',
         recurring: false
       },
@@ -156,6 +160,7 @@ export class SeedService {
         categoryId: categoryMap.get('Dining')!,
         paidByUserId: userId,
         date: recentDates[2],
+        localDate: recentLocalDates[2],
         scope: 'shared',
         recurring: false
       },
@@ -166,6 +171,7 @@ export class SeedService {
         categoryId: categoryMap.get('Entertainment')!,
         paidByUserId: userId,
         date: recentDates[3],
+        localDate: recentLocalDates[3],
         scope: 'personal',
         recurring: false
       },
@@ -176,6 +182,7 @@ export class SeedService {
         categoryId: categoryMap.get('Wellness')!,
         paidByUserId: userId,
         date: recentDates[4],
+        localDate: recentLocalDates[4],
         scope: 'personal',
         recurring: false
       }

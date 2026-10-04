@@ -15,12 +15,16 @@ export class ToastService {
 
   readonly toasts = this.toastsSignal.asReadonly();
 
+  // durationMs of 0 keeps the toast up until the user dismisses it — used for
+  // errors so a failure the user needs to see can't silently vanish.
   show(message: string, type: ToastType = 'info', durationMs = 4000): void {
     const id = this.nextId++;
     const toast: Toast = { id, message, type };
     this.toastsSignal.set([...this.toastsSignal(), toast]);
 
-    setTimeout(() => this.dismiss(id), durationMs);
+    if (durationMs > 0) {
+      setTimeout(() => this.dismiss(id), durationMs);
+    }
   }
 
   success(message: string): void {
@@ -28,11 +32,11 @@ export class ToastService {
   }
 
   error(message: string): void {
-    this.show(message, 'error', 5000);
+    this.show(message, 'error', 0);
   }
 
   warning(message: string): void {
-    this.show(message, 'warning');
+    this.show(message, 'warning', 6000);
   }
 
   info(message: string): void {

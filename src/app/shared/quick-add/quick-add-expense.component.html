@@ -1,106 +1,126 @@
 @if (ui.quickAddOpen()) {
-  <div class="overlay" (click)="close()"></div>
-  <div class="sheet">
-    <div class="sheet-header">
-      <div>
-        <h3>Add expense</h3>
-        <p>Track shared or personal spend instantly.</p>
+  <app-sheet [title]="type() === 'income' ? 'Add income' : 'Add expense'" (closed)="close()">
+    <form class="form" [formGroup]="form" (ngSubmit)="submit()">
+      <div class="segmented block" role="tablist" aria-label="Entry type">
+        <button type="button" role="tab" [attr.aria-selected]="type() === 'expense'" [class.active]="type() === 'expense'" (click)="setType('expense')">Expense</button>
+        <button type="button" role="tab" [attr.aria-selected]="type() === 'income'" [class.active]="type() === 'income'" (click)="setType('income')">Income</button>
       </div>
-      <button type="button" class="icon-button" (click)="close()">X</button>
-    </div>
 
-    <form [formGroup]="form" (ngSubmit)="submit()">
       <div class="field">
-        <label>Title</label>
-        <input type="text" formControlName="title" placeholder="Groceries, rent, coffee" />
+        <label for="qa-amount">Amount</label>
+        <div class="amount-field big">
+          <span class="prefix">{{ currency.symbol() }}</span>
+          <input id="qa-amount" type="number" inputmode="decimal" formControlName="amount" min="0" step="0.01" placeholder="0.00" autocomplete="off" />
+        </div>
       </div>
 
-      <div class="grid">
+      <div class="field">
+        <label for="qa-title">{{ type() === 'income' ? 'Source' : 'Description' }}</label>
+        <input
+          id="qa-title"
+          type="text"
+          formControlName="title"
+          [placeholder]="type() === 'income' ? 'Salary, freelance, refund…' : 'Groceries, rent, coffee…'"
+          autocomplete="off"
+        />
+      </div>
+
+      @if (type() === 'expense') {
         <div class="field">
-          <label>Amount</label>
-          <input type="number" formControlName="amount" min="0" step="0.01" placeholder="Enter amount" />
-        </div>
-        <div class="field">
-          <label>Category</label>
-          <div class="category-row">
-            <select formControlName="categoryId" (change)="onCategorySelect($event)">
-              @for (category of categories(); track category.id) {
-                <option [value]="category.id">{{ category.name }}</option>
-              }
-              <option value="__new__">+ New category</option>
-            </select>
-            <button type="button" class="tiny-icon" (click)="openRenameCategory()" aria-label="Rename category">
-              <svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.5-1 9-9a1.5 1.5 0 0 0 0-2.1L16.1 6.5a1.5 1.5 0 0 0-2.1 0l-9 9L4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12.5 8.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="field-label">Category</span>
+          <div class="chip-row">
+            @for (category of categories(); track category.id) {
+              <button
+                type="button"
+                class="chip-btn"
+                [class.active]="form.value.categoryId === category.id"
+                (click)="pickCategory(category.id)"
+              >
+                <span class="dot" [style.background]="category.color"></span>
+                {{ category.name }}
+              </button>
+            }
+            <button type="button" class="chip-btn new" (click)="showCategoryModal.set(true)">
+              <app-icon name="plus" size="14" /> New
             </button>
           </div>
-        </div>
-      </div>
-
-      <div class="grid">
-        <div class="field">
-          <label>Paid by</label>
-          <select formControlName="paidByUserId">
-            @if (hasHousehold()) {
-              @for (member of householdMembers(); track member.userId) {
-                <option [value]="member.userId">{{ member.displayName }}</option>
-              }
-            } @else if (activeUser()) {
-              <option [value]="activeUser()?.id">{{ activeUser()?.name }}</option>
-            }
-          </select>
-        </div>
-        <div class="field">
-          <label>Date</label>
-          <input type="date" formControlName="date" />
-        </div>
-      </div>
-
-      <div class="grid">
-        <div class="field">
-          <label>Scope</label>
-          <select formControlName="scope">
-            @if (hasHousehold()) {
-              <option value="shared">Shared</option>
-            }
-            <option value="personal">Personal</option>
-          </select>
-          @if (!hasHousehold()) {
-            <p>Shared scope unlocks after you join or create a household.</p>
+          @if (categories().length === 0) {
+            <span class="hint">Create your first category to file this expense under.</span>
           }
         </div>
-        <div class="field checkbox">
-          <label>
-            <input type="checkbox" formControlName="recurring" />
-            Recurring monthly
-          </label>
+      } @else {
+        <p class="hint-line">Income is filed under the <strong>Income</strong> category automatically.</p>
+      }
+
+      <div class="field">
+        <span class="field-label">Date</span>
+        <div class="date-row">
+          <div class="segmented">
+            <button type="button" [class.active]="datePick() === 'today'" (click)="pickDate('today')">Today</button>
+            <button type="button" [class.active]="datePick() === 'yesterday'" (click)="pickDate('yesterday')">Yesterday</button>
+            <button type="button" [class.active]="datePick() === 'custom'" (click)="pickDate('custom')">Pick</button>
+          </div>
+          @if (datePick() === 'custom') {
+            <input type="date" formControlName="date" aria-label="Date" />
+          }
         </div>
       </div>
 
-      <div class="actions">
-        <button type="button" class="ghost" (click)="close()">Cancel</button>
-        <button type="submit" class="primary">Add expense</button>
+      @if (hasHousehold()) {
+        <div class="field-row">
+          <div class="field">
+            <span class="field-label">Scope</span>
+            <div class="segmented block">
+              <button type="button" [class.active]="form.value.scope === 'shared'" (click)="setScope('shared')">Shared</button>
+              <button type="button" [class.active]="form.value.scope === 'personal'" (click)="setScope('personal')">Personal</button>
+            </div>
+          </div>
+          @if (members().length > 1) {
+            <div class="field">
+              <label for="qa-paidby">{{ type() === 'income' ? 'Received by' : 'Paid by' }}</label>
+              <select id="qa-paidby" formControlName="paidByUserId">
+                @for (member of members(); track member.userId) {
+                  <option [value]="member.userId">{{ member.displayName }}</option>
+                }
+              </select>
+            </div>
+          }
+        </div>
+      }
+
+      <div class="switch-row">
+        <div class="switch-text">
+          <span>Repeats monthly</span>
+          <span>
+            @if (form.value.recurring) {
+              Logged automatically on the {{ recurringDay() }}{{ recurringDay() === 1 || recurringDay() === 21 || recurringDay() === 31 ? 'st' : recurringDay() === 2 || recurringDay() === 22 ? 'nd' : recurringDay() === 3 || recurringDay() === 23 ? 'rd' : 'th' }} of each month.
+            } @else {
+              Rent, salary, subscriptions…
+            }
+          </span>
+        </div>
+        <button type="button" class="switch" [class.on]="form.value.recurring" (click)="toggleRecurring()" role="switch" [attr.aria-checked]="form.value.recurring" aria-label="Repeats monthly"></button>
+      </div>
+
+      @if (showNotes()) {
+        <div class="field">
+          <label for="qa-notes">Notes</label>
+          <textarea id="qa-notes" formControlName="notes" rows="2" placeholder="Anything worth remembering"></textarea>
+        </div>
+      } @else {
+        <button type="button" class="link-btn small notes-toggle" (click)="showNotes.set(true)">+ Add a note</button>
+      }
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-quiet" (click)="submit(true)">Save & add another</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">{{ type() === 'income' ? 'Add income' : 'Add expense' }}</button>
       </div>
     </form>
-  </div>
+  </app-sheet>
 }
 
 @if (showCategoryModal()) {
-  <app-category-modal
-    (created)="onCategoryCreated($event)"
-    (closed)="closeCategoryModal()"
-  />
-}
-
-@if (showRenameCategoryModal()) {
-  <div class="rename-overlay" (click)="closeRenameCategoryModal()"></div>
-  <div class="rename-modal">
-    <h3>Rename category</h3>
-    <form [formGroup]="renameCategoryForm" (ngSubmit)="saveCategoryRename()">
-      <input type="text" formControlName="name" placeholder="Category name" />
-      <div class="rename-actions">
-        <button type="button" class="ghost" (click)="closeRenameCategoryModal()">Cancel</button>
-        <button type="submit" class="primary">Save</button>
-      </div>
-    </form>
-  </div>
+  <app-category-modal (saved)="onCategorySaved($event)" (closed)="showCategoryModal.set(false)" />
 }

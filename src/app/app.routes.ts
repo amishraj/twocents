@@ -7,6 +7,14 @@ import { unauthGuard } from './core/guards/unauth.guard';
 
 export const routes: Routes = [
   {
+    path: 'terms',
+    loadComponent: () => import('./features/legal/terms.component').then((m) => m.TermsComponent)
+  },
+  {
+    path: 'privacy',
+    loadComponent: () => import('./features/legal/privacy.component').then((m) => m.PrivacyComponent)
+  },
+  {
     path: 'auth',
     canActivate: [unauthGuard],
     loadComponent: () => import('./features/auth/auth.component').then((m) => m.AuthComponent)

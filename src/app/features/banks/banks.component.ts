@@ -1,13 +1,16 @@
 import { AfterViewInit, Component, computed, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { BankAccountSnapshot, SimplefinService } from '../../core/services/simplefin.service';
 import { ToastService } from '../../shared/toast/toast.service';
+import { MoneyPipe } from '../../core/pipes/money.pipe';
+import { IconComponent } from '../../shared/icon/icon.component';
+import { SheetComponent } from '../../shared/sheet/sheet.component';
 
 @Component({
   selector: 'app-banks',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [DatePipe, ReactiveFormsModule, MoneyPipe, IconComponent, SheetComponent],
   templateUrl: './banks.component.html',
   styleUrl: './banks.component.scss'
 })

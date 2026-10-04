@@ -1,18 +1,28 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { AppStateService } from '../../core/services/app-state.service';
 import { HouseholdMembershipService } from '../../core/services/household-membership.service';
 import { InviteFlowService } from '../../core/services/invite-flow.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { QuickAddExpenseComponent } from '../quick-add/quick-add-expense.component';
 import { ToastComponent } from '../toast/toast.component';
+import { ToastService } from '../toast/toast.service';
+import { IconComponent } from '../icon/icon.component';
+import { SheetComponent } from '../sheet/sheet.component';
+
+interface NavItem {
+  label: string;
+  route: string;
+  icon: string;
+  group: 'main' | 'more';
+}
 
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, QuickAddExpenseComponent, ToastComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, QuickAddExpenseComponent, ToastComponent, IconComponent, SheetComponent],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss'
 })
@@ -22,47 +32,59 @@ export class ShellComponent {
   private readonly appState = inject(AppStateService);
   private readonly membership = inject(HouseholdMembershipService);
   private readonly inviteFlow = inject(InviteFlowService);
+  private readonly toast = inject(ToastService);
+  readonly auth = inject(AuthService);
+  readonly ui = inject(UiStateService);
+  readonly theme = inject(ThemeService);
 
-  readonly sidenavOpen = signal(false);
-  readonly colorPickerOpen = signal(false);
-  readonly themeColors = ['#0284c7', '#0f766e', '#059669', '#b45309', '#dc2626', '#7c3aed'];
-  readonly activeThemeColor = computed(() => this.auth.getActiveUser()?.preferences.themeColor ?? '#0284c7');
+  readonly moreOpen = signal(false);
+  readonly currentYear = new Date().getFullYear();
+
+  readonly user = computed(() => this.auth.getActiveUser());
+  readonly household = computed(() => {
+    const user = this.user();
+    return user ? this.appState.householdById(user.householdId) : undefined;
+  });
+  readonly hasHousehold = computed(() => Boolean(this.user()?.householdId?.trim()));
   readonly showAdminNav = computed(() => this.auth.isAdminUser());
-  readonly hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
+  readonly syncStatus = computed(() => this.appState.syncStatus());
+  readonly initials = computed(() => {
+    const name = this.user()?.name?.trim() || this.user()?.email || '';
+    const parts = name.split(/\s+/).filter(Boolean);
+    return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
+  });
+
+  private readonly allNav: NavItem[] = [
+    { label: 'Overview', route: '/dashboard', icon: 'home', group: 'main' },
+    { label: 'Activity', route: '/transactions', icon: 'list', group: 'main' },
+    { label: 'Budgets', route: '/budgets', icon: 'target', group: 'main' },
+    { label: 'Savings', route: '/savings', icon: 'piggy', group: 'main' },
+    { label: 'Household', route: '/household', icon: 'users', group: 'main' },
+    { label: 'Investments', route: '/investments', icon: 'trending', group: 'more' },
+    { label: 'Banks', route: '/banks', icon: 'bank', group: 'more' },
+    { label: 'Splitwise', route: '/splitwise', icon: 'share', group: 'more' },
+    { label: 'Settings', route: '/profile', icon: 'settings', group: 'more' }
+  ];
+
+  readonly navItems = computed(() =>
+    this.allNav.filter((item) => item.route !== '/household' || this.hasHousehold())
+  );
+  readonly mainNav = computed(() => this.navItems().filter((item) => item.group === 'main'));
+  readonly moreNav = computed(() => this.navItems().filter((item) => item.group === 'more'));
+  // Bottom tab bar shows four destinations; everything else lives under "More".
+  readonly tabNav = computed(() => this.mainNav().slice(0, 3));
+  readonly moreSheetNav = computed(() => [...this.mainNav().slice(3), ...this.moreNav()]);
 
   readonly pendingInvite = computed(() => {
     const code = this.inviteFlow.pendingInviteCode();
     if (!code) {
       return null;
     }
-
-    const targetHousehold = this.appState.households().find((item) => item.inviteCode === code);
-    return {
-      code,
-      householdName: targetHousehold?.name
-    };
+    const target = this.appState.households().find((item) => item.inviteCode === code);
+    return { code, householdName: target?.name };
   });
 
-  inviteActionMessage = '';
-  private inviteToastTimer: ReturnType<typeof setTimeout> | null = null;
-
-  navItems = [
-    { label: 'Home', route: '/dashboard', icon: 'home' },
-    { label: 'Transactions', route: '/transactions', icon: 'swap' },
-    { label: 'Budgets', route: '/budgets', icon: 'chart' },
-    { label: 'Savings', route: '/savings', icon: 'piggy' },
-    { label: 'Banks', route: '/banks', icon: 'bank' },
-    { label: 'Household', route: '/household', icon: 'home' },
-    { label: 'Investments', route: '/investments', icon: 'stock' },
-    { label: 'Splitwise', route: '/splitwise', icon: 'share' },
-    { label: 'Profile', route: '/profile', icon: 'user' }
-  ];
-
-  readonly visibleNavItems = computed(() =>
-    this.navItems.filter((item) => item.route !== '/household' || this.hasHousehold())
-  );
-
-  constructor(public auth: AuthService, public ui: UiStateService) {
+  constructor() {
     this.route.queryParamMap.subscribe((params) => {
       const inviteCode = (params.get('inviteCode') ?? '').toUpperCase().trim();
       if (inviteCode) {
@@ -70,49 +92,29 @@ export class ShellComponent {
       }
     });
 
+    // Already a member of the invited household → nothing to accept.
     effect(() => {
       const invite = this.pendingInvite();
       if (!invite) {
         return;
       }
-
-      const activeUser = this.auth.getActiveUser();
-      const activeHousehold = activeUser ? this.appState.householdById(activeUser.householdId) : undefined;
-      if (activeHousehold?.inviteCode === invite.code) {
+      const user = this.auth.getActiveUser();
+      const current = user ? this.appState.householdById(user.householdId) : undefined;
+      if (current?.inviteCode === invite.code) {
         this.inviteFlow.clearPendingInviteCode();
       }
     }, { allowSignalWrites: true });
 
-    effect(() => {
-      const color = this.activeThemeColor();
-      this.applyThemeColor(color);
-    });
+    this.router.events.subscribe(() => this.moreOpen.set(false));
   }
 
   openQuickAdd(): void {
-    this.closeColorPicker();
+    this.moreOpen.set(false);
     this.ui.openQuickAdd();
   }
 
-  toggleColorPicker(): void {
-    this.colorPickerOpen.set(!this.colorPickerOpen());
-  }
-
-  closeColorPicker(): void {
-    this.colorPickerOpen.set(false);
-  }
-
-  openSidenav(): void {
-    this.sidenavOpen.set(true);
-  }
-
-  closeSidenav(): void {
-    this.sidenavOpen.set(false);
-  }
-
   signOut(): void {
-    this.closeColorPicker();
-    this.closeSidenav();
+    this.moreOpen.set(false);
     void this.auth.signOut();
   }
 
@@ -121,89 +123,22 @@ export class ShellComponent {
     if (!invite) {
       return;
     }
-
     const message = await this.membership.requestJoinByCode(invite.code);
-    this.showInviteToast(message);
-
-    if (message.startsWith('Joined ') || message === 'You are already in this household.') {
+    const joined = message.startsWith('Joined') || message === 'You are already in this household.';
+    if (joined) {
+      this.toast.success(message);
       this.inviteFlow.clearPendingInviteCode();
-      void this.router.navigate(['/dashboard']);
+      void this.router.navigate(['/household']);
+    } else {
+      this.toast.warning(message);
+      if (message.includes('invalid') || message.includes('expired') || message.includes('already been used')) {
+        this.inviteFlow.clearPendingInviteCode();
+      }
     }
-
-    this.closeColorPicker();
   }
 
   declineInvite(): void {
-    const invite = this.pendingInvite();
-    if (!invite) {
-      return;
-    }
-
     this.inviteFlow.clearPendingInviteCode();
-    this.showInviteToast('Invite declined.');
-  }
-
-  setThemeColor(color: string): void {
-    this.applyThemeColor(color);
-
-    const activeUser = this.auth.getActiveUser();
-    if (!activeUser) {
-      return;
-    }
-
-    this.auth.updateUser({
-      ...activeUser,
-      preferences: {
-        ...activeUser.preferences,
-        themeColor: color
-      }
-    });
-  }
-
-  private toRgba(hex: string, alpha: number): string {
-    const normalized = hex.replace('#', '');
-    if (normalized.length !== 6) {
-      return `rgba(2,132,199,${alpha})`;
-    }
-
-    const red = Number.parseInt(normalized.slice(0, 2), 16);
-    const green = Number.parseInt(normalized.slice(2, 4), 16);
-    const blue = Number.parseInt(normalized.slice(4, 6), 16);
-    return `rgba(${red},${green},${blue},${alpha})`;
-  }
-
-  private darken(hex: string, amount: number): string {
-    const normalized = hex.replace('#', '');
-    if (normalized.length !== 6) {
-      return '#0369a1';
-    }
-
-    const scale = Math.max(0, 1 - amount);
-    const red = Math.max(0, Math.floor(Number.parseInt(normalized.slice(0, 2), 16) * scale));
-    const green = Math.max(0, Math.floor(Number.parseInt(normalized.slice(2, 4), 16) * scale));
-    const blue = Math.max(0, Math.floor(Number.parseInt(normalized.slice(4, 6), 16) * scale));
-    return `#${red.toString(16).padStart(2, '0')}${green.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
-  }
-
-  private applyThemeColor(color: string): void {
-    const accentSoft = this.toRgba(color, 0.16);
-    const accentDark = this.darken(color, 0.18);
-    document.documentElement.style.setProperty('--accent', color);
-    document.documentElement.style.setProperty('--accent-soft', accentSoft);
-    document.documentElement.style.setProperty('--accent-dark', accentDark);
-    document.documentElement.style.setProperty('--info', color);
-    document.documentElement.style.setProperty('--info-soft', accentSoft);
-    document.documentElement.style.setProperty('--shadow-strong', `0 18px 38px -18px ${this.toRgba(color, 0.55)}`);
-  }
-
-  private showInviteToast(message: string): void {
-    this.inviteActionMessage = message;
-    if (this.inviteToastTimer) {
-      clearTimeout(this.inviteToastTimer);
-    }
-
-    this.inviteToastTimer = setTimeout(() => {
-      this.inviteActionMessage = '';
-    }, 3000);
+    this.toast.info('Invite dismissed.');
   }
 }

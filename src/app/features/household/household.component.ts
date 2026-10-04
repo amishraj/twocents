@@ -1,534 +1,303 @@
-import { AfterViewInit, Component, computed, effect, inject, signal, ViewChildren, QueryList, ElementRef, OnDestroy, ViewChild } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
 import { HouseholdMembershipService } from '../../core/services/household-membership.service';
-import { InviteFlowService } from '../../core/services/invite-flow.service';
+import { InsightsService } from '../../core/services/insights.service';
+import { InviteCodeService } from '../../core/services/invite-code.service';
+import { InviteEmailService } from '../../core/services/invite-email.service';
+import { UiStateService } from '../../core/services/ui-state.service';
+import { MoneyPipe } from '../../core/pipes/money.pipe';
 import { ToastService } from '../../shared/toast/toast.service';
 import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
+import { SheetComponent } from '../../shared/sheet/sheet.component';
+import { IconComponent } from '../../shared/icon/icon.component';
 import { TransactionRowComponent } from '../../shared/transaction-row/transaction-row.component';
-import {
-  Chart,
-  DoughnutController,
-  ArcElement,
-  Tooltip,
-  Legend
-} from 'chart.js';
-
-Chart.register(DoughnutController, ArcElement, Tooltip, Legend);
+import { createId, createInviteCode, createInviteExpiry } from '../../core/utils/id';
+import { todayLocalDate } from '../../core/utils/dates';
+import { monthRange, rangeLabel, shortDate } from '../../core/utils/periods';
+import { isExpense, isIncome, sortNewestFirst, sumAmounts, txInRange } from '../../core/utils/transactions';
 
 @Component({
   selector: 'app-household',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, ConfirmModalComponent, TransactionRowComponent],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    RouterLink,
+    MoneyPipe,
+    ConfirmModalComponent,
+    SheetComponent,
+    IconComponent,
+    TransactionRowComponent
+  ],
   templateUrl: './household.component.html',
   styleUrl: './household.component.scss'
 })
-export class HouseholdComponent implements AfterViewInit, OnDestroy {
-  @ViewChildren('budgetGaugeCanvas') budgetGaugeRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
-  @ViewChild('incomeGaugeCanvas') incomeGaugeRef?: ElementRef<HTMLCanvasElement>;
-  private budgetCharts: Chart<'doughnut'>[] = [];
-  private incomeChart: Chart<'doughnut'> | null = null;
-
+export class HouseholdComponent {
   private readonly fb = inject(FormBuilder);
-  private readonly appState = inject(AppStateService);
   private readonly auth = inject(AuthService);
   private readonly membership = inject(HouseholdMembershipService);
-  private readonly inviteFlow = inject(InviteFlowService);
+  private readonly inviteEmail = inject(InviteEmailService);
+  private readonly inviteCodes = inject(InviteCodeService);
   private readonly toast = inject(ToastService);
+  readonly appState = inject(AppStateService);
+  readonly insights = inject(InsightsService);
+  readonly ui = inject(UiStateService);
 
-  constructor() {
-    effect(() => {
-      void this.incomeChartReady();
-      const pct = this.monthlySpendPercent();
-      const spent = this.monthlySharedSpend();
-      const income = this.monthlyHouseholdIncome();
-      if (this.incomeChart) {
-        this.incomeChart.data.datasets[0].data = [spent, Math.max(0, income - spent)];
-        const themeColor = this.auth.getActiveUser()?.preferences.themeColor ?? '#0284c7';
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this.incomeChart.data.datasets[0] as any).backgroundColor = [
-          this.getHealthColor(pct, themeColor),
-          '#e0f2fe'
-        ];
-        this.incomeChart.update('none');
-      }
-    });
-  }
+  readonly renaming = signal(false);
+  readonly inviting = signal(false);
+  readonly confirmLeave = signal(false);
+  readonly confirmCancelInviteId = signal<string | null>(null);
+  readonly sendingInvite = signal(false);
+  readonly copied = signal(false);
 
-  contributionInput = signal<Record<string, number>>({});
-  confirmLeave = signal(false);
-  showIncomeForm = signal(false);
-  incomeSourceInput = signal('');
-  incomeAmountInput = signal<number | null>(null);
-  incomeChartReady = signal(0);
-
-  private readonly todayStr = new Date().toISOString().split('T')[0];
-  private readonly yesterdayStr = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  })();
-
-  private mapTransaction(transaction: ReturnType<typeof this.appState.transactions>[0]) {
-    const memberLookup = new Map(this.members().map((m) => [m.userId, m.displayName]));
-    return {
-      ...transaction,
-      paidByName: memberLookup.get(transaction.paidByUserId) ?? 'Member',
-      categoryName: this.appState.categoryById(transaction.categoryId)?.name ?? 'Uncategorized'
-    };
-  }
-  joinModalOpen = signal(false);
-  joinMessage = '';
-
-  joinForm = this.fb.group({
-    code: ['', [Validators.required, Validators.minLength(6)]]
-  });
-
-  householdNameForm = this.fb.group({
-    name: ['', Validators.required]
-  });
-
-  activeUser = computed(() => this.auth.getActiveUser());
-
-  household = computed(() => {
-    const user = this.activeUser();
+  readonly user = computed(() => this.auth.getActiveUser());
+  readonly household = computed(() => {
+    const user = this.user();
     return user ? this.appState.householdById(user.householdId) : undefined;
   });
+  readonly monthLabel = computed(() => rangeLabel(monthRange(todayLocalDate())));
 
-  canAttemptJoin = computed(() => !this.household());
-
-  joinDisabledReason = computed(() =>
-    this.household()
-      ? 'You are already part of a household. Leave your current household before joining another one.'
-      : ''
-  );
-
-  needsHouseholdName = computed(() => {
-    const household = this.household();
-    return Boolean(household && (!household.name || household.name.trim().length === 0));
-  });
-
-  canLeaveHousehold = computed(() => {
-    const household = this.household();
-    return Boolean(household);
-  });
-
-  leaveBlockedByConsent = computed(() => {
-    const household = this.household();
-    const user = this.activeUser();
-    if (!household || !user) {
-      return false;
-    }
-
-    const currentMember = household.members.find((member) => member.userId === user.id);
-    const hasOtherMembers = household.members.some((member) => member.userId !== user.id);
-    return currentMember?.role === 'owner' && hasOtherMembers;
-  });
-
-  members = computed(() => {
+  readonly members = computed(() => {
     const household = this.household();
     if (!household) {
       return [];
     }
-
     return household.members.map((member) => {
-      const user = this.appState.userById(member.userId);
+      const profile = this.appState.userById(member.userId);
       return {
         ...member,
-        incomeMonthly: user?.incomeMonthly ?? 0,
-        email: user?.email ?? ''
+        name: profile?.name || member.displayName,
+        email: profile?.email ?? '',
+        incomeMonthly: profile?.incomeMonthly ?? 0,
+        initials: initials(profile?.name || member.displayName),
+        isYou: member.userId === this.user()?.id
       };
     });
   });
 
-  monthlyHouseholdIncome = computed(() => {
-    const baseIncome = this.members().reduce((sum, member) => sum + member.incomeMonthly, 0);
-    const additionalIncome = this.totalAdditionalIncomeThisMonth();
-    return baseIncome + additionalIncome;
+  readonly myRole = computed(() => this.members().find((m) => m.isYou)?.role ?? 'member');
+  readonly canManage = computed(() => this.myRole() === 'owner' || this.myRole() === 'manager');
+
+  private readonly monthTx = computed(() => this.appState.transactions().filter((tx) => txInRange(tx, monthRange(todayLocalDate()))));
+  readonly sharedExpenses = computed(() => this.monthTx().filter((tx) => tx.scope === 'shared' && isExpense(tx)));
+  readonly sharedSpent = computed(() => sumAmounts(this.sharedExpenses()));
+  readonly expectedIncome = computed(() => this.members().reduce((sum, m) => sum + m.incomeMonthly, 0));
+  readonly loggedIncome = computed(() => {
+    const monthStart = monthRange(todayLocalDate()).start;
+    const legacy = this.appState
+      .additionalIncome()
+      .filter((e) => (e.date ?? '').slice(0, 10) >= monthStart)
+      .reduce((sum, e) => sum + e.amount, 0);
+    return sumAmounts(this.monthTx().filter(isIncome)) + legacy;
+  });
+  readonly spendOfIncomePercent = computed(() => {
+    const income = this.expectedIncome();
+    return income > 0 ? Math.min(100, Math.round((this.sharedSpent() / income) * 100)) : 0;
   });
 
-  monthlySharedSpend = computed(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return this.appState
-      .transactions()
-      .filter((tx) => tx.scope === 'shared' && new Date(tx.date) >= monthStart)
-      .reduce((sum, tx) => sum + tx.amount, 0);
-  });
-
-  monthlySpendPercent = computed(() => {
-    const income = this.monthlyHouseholdIncome();
-    if (income <= 0) return 0;
-    return Math.min(100, Math.round((this.monthlySharedSpend() / income) * 100));
-  });
-
-  memberContribution = computed(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const sharedTx = this.appState
-      .transactions()
-      .filter((tx) => tx.scope === 'shared' && new Date(tx.date) >= monthStart);
-
-    const totalSharedSpend = sharedTx.reduce((sum, tx) => sum + tx.amount, 0);
-    return this.members().map((member) => {
-      const spend = sharedTx
-        .filter((tx) => tx.paidByUserId === member.userId)
-        .reduce((sum, tx) => sum + tx.amount, 0);
-      return {
-        ...member,
-        sharedSpend: spend,
-        spendPct: totalSharedSpend > 0 ? Math.round((spend / totalSharedSpend) * 100) : 0,
-        incomePct:
-          this.monthlyHouseholdIncome() > 0
-            ? Math.round((member.incomeMonthly / this.monthlyHouseholdIncome()) * 100)
-            : 0
-      };
-    });
-  });
-
-  additionalIncomeEntries = computed(() => {
-    const household = this.household();
-    if (!household) return [];
-    return this.appState.additionalIncome()
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  });
-
-  allMembersAdditionalIncomeThisMonth = computed(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const allEntries = this.appState.additionalIncome().filter((e) => new Date(e.date) >= monthStart);
-    
-    return this.members().map((member) => {
-      const memberEntries = allEntries.filter((e) => e.userId === member.userId);
-      const memberTotal = memberEntries.reduce((sum, e) => sum + e.amount, 0);
-      return {
-        ...member,
-        additionalIncome: memberTotal,
-        entries: memberEntries
-      };
-    });
-  });
-
-  totalAdditionalIncomeThisMonth = computed(() => {
-    return this.allMembersAdditionalIncomeThisMonth().reduce((sum, m) => sum + m.additionalIncome, 0);
-  });
-
-  sharedBudgetSummaries = computed(() => {
-    const now = new Date();
-    return this.appState
-      .budgets()
-      .filter((budget) => budget.scope === 'shared')
-      .map((budget) => {
-        const start = new Date(now);
-        if (budget.period === 'weekly') {
-          start.setDate(now.getDate() - 6);
-        } else {
-          start.setDate(1);
-          start.setHours(0, 0, 0, 0);
-        }
-
-        const spent = this.appState
-          .transactions()
-          .filter(
-            (tx) =>
-              tx.scope === 'shared' && tx.categoryId === budget.categoryId && new Date(tx.date) >= start
-          )
-          .reduce((sum, tx) => sum + tx.amount, 0);
-
+  // Who paid what this month, versus an income-weighted "fair share".
+  readonly contributions = computed(() => {
+    const total = this.sharedSpent();
+    const income = this.expectedIncome();
+    const members = this.members();
+    return members
+      .map((member) => {
+        const paid = sumAmounts(this.sharedExpenses().filter((tx) => tx.paidByUserId === member.userId));
+        const paidShare = total > 0 ? paid / total : 0;
+        const fairShare = income > 0 ? member.incomeMonthly / income : members.length > 0 ? 1 / members.length : 0;
         return {
-          budget,
-          category: this.appState.categoryById(budget.categoryId),
-          spent,
-          remaining: Math.max(budget.limit - spent, 0),
-          percent: budget.limit > 0 ? Math.min(100, Math.round((spent / budget.limit) * 100)) : 0
+          ...member,
+          paid,
+          paidShare,
+          fairShare,
+          fairAmount: total * fairShare,
+          difference: paid - total * fairShare
         };
-      });
+      })
+      .sort((a, b) => b.paid - a.paid);
   });
 
-  sharedSavingsGoals = computed(() =>
-    this.appState.savingsGoals().filter((goal) => goal.scope === 'shared')
+  readonly sharedBudgets = computed(() => this.insights.budgetSummaries().filter((s) => s.budget.scope === 'shared'));
+  readonly sharedGoals = computed(() =>
+    this.appState
+      .savingsGoals()
+      .filter((g) => g.scope === 'shared')
+      .map((goal) => ({ goal, percent: goal.targetAmount > 0 ? Math.min(100, (goal.currentAmount / goal.targetAmount) * 100) : 0 }))
+  );
+  readonly recentShared = computed(() =>
+    sortNewestFirst(this.appState.transactions().filter((tx) => tx.scope === 'shared')).slice(0, 8)
   );
 
-  ngAfterViewInit(): void {
-    setTimeout(() => {
-      this.initIncomeChart();
-      this.incomeChartReady.update(v => v + 1);
-      this.initBudgetCharts();
-    }, 0);
-  }
-
-  ngOnDestroy(): void {
-    for (const chart of this.budgetCharts) {
-      chart.destroy();
-    }
-    this.budgetCharts = [];
-    this.incomeChart?.destroy();
-    this.incomeChart = null;
-  }
-
-  private initIncomeChart(): void {
-    const canvas = this.incomeGaugeRef?.nativeElement;
-    if (!canvas) return;
-
-    const themeColor = this.auth.getActiveUser()?.preferences.themeColor ?? '#0284c7';
-
-    this.incomeChart = new Chart(canvas, {
-      type: 'doughnut',
-      data: {
-        labels: ['Spent', 'Remaining'],
-        datasets: [{
-          data: [this.monthlySharedSpend(), Math.max(0, this.monthlyHouseholdIncome() - this.monthlySharedSpend())],
-          backgroundColor: [this.getHealthColor(this.monthlySpendPercent(), themeColor), '#e0f2fe'],
-          borderColor: '#ffffff',
-          borderWidth: 3,
-          hoverOffset: 4
-        }]
-      },
-      options: {
-        cutout: '70%',
-        responsive: true,
-        maintainAspectRatio: true,
-        animation: { animateRotate: true, animateScale: false, duration: 700 },
-        plugins: {
-          legend: { display: false },
-          tooltip: { enabled: false }
-        }
-      }
-    });
-  }
-
-  private initBudgetCharts(): void {
-    const canvases = this.budgetGaugeRefs?.toArray() ?? [];
-    const budgetData = this.sharedBudgetSummaries();
-
-    for (let i = 0; i < Math.min(canvases.length, budgetData.length); i++) {
-      const canvas = canvases[i].nativeElement;
-      const item = budgetData[i];
-
-      const chart = new Chart(canvas, {
-        type: 'doughnut',
-        data: {
-          labels: [item.category?.name ?? 'Budget', 'Remaining'],
-          datasets: [
-            {
-              data: [item.percent, 100 - item.percent],
-              backgroundColor: [this.getHealthColor(item.percent, item.category?.color ?? '#0ea5e9'), '#f1f5f9'],
-              borderWidth: 0,
-              hoverOffset: 4
-            }
-          ]
-        },
-        options: {
-          cutout: '70%',
-          responsive: true,
-          maintainAspectRatio: true,
-          animation: { animateRotate: true, animateScale: false, duration: 600 },
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: false }
-          }
-        }
-      });
-
-      this.budgetCharts.push(chart);
-    }
-  }
-
-  getHealthColor(percent: number, categoryColor: string): string {
-    if (percent >= 100) return '#dc2626';
-    if (percent >= 85) return '#d97706';
-    return categoryColor;
-  }
-
-  sharedGoalProgress(goalId: string): number {
-    const goal = this.sharedSavingsGoals().find((item) => item.id === goalId);
-    if (!goal || goal.targetAmount <= 0) {
-      return 0;
-    }
-
-    return Math.min(100, (goal.currentAmount / goal.targetAmount) * 100);
-  }
-
-  sharedGoalProgressColor(goalId: string): string {
-    const progress = this.sharedGoalProgress(goalId);
-    const hue = Math.max(0, Math.min(120, Math.round((progress / 100) * 120)));
-    return `hsl(${hue} 78% 48%)`;
-  }
-
-  sharedGoalTone(goalId: string): 'danger' | 'warning' | 'success' {
-    const progress = this.sharedGoalProgress(goalId);
-    if (progress >= 80) {
-      return 'success';
-    }
-    if (progress >= 40) {
-      return 'warning';
-    }
-    return 'danger';
-  }
-
-  sharedGoalStatus(goalId: string): string {
-    const tone = this.sharedGoalTone(goalId);
-    if (tone === 'success') {
-      return 'Near goal';
-    }
-    if (tone === 'warning') {
-      return 'On track';
-    }
-    return 'Behind';
-  }
-
-  recentHouseholdTransactions = computed(() => {
-    return this.appState
-      .transactions()
-      .filter((tx) => tx.scope === 'shared')
-      .filter((tx) => {
-        const d = tx.date.substring(0, 10);
-        return d === this.todayStr || d === this.yesterdayStr;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 8)
-      .map((tx) => this.mapTransaction(tx));
+  readonly pendingInvites = computed(() => {
+    const household = this.household();
+    return household ? this.appState.invites().filter((i) => i.householdId === household.id && i.status === 'pending') : [];
   });
 
-  upcomingHouseholdTransactions = computed(() => {
-    return this.appState
-      .transactions()
-      .filter((tx) => tx.scope === 'shared')
-      .filter((tx) => tx.date.substring(0, 10) > this.todayStr)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, 8)
-      .map((tx) => this.mapTransaction(tx));
+  readonly inviteExpiry = computed(() => {
+    const expires = this.household()?.inviteCodeExpiresAt;
+    if (!expires) {
+      return { expired: false, label: '' };
+    }
+    const ms = new Date(expires).getTime() - Date.now();
+    if (ms <= 0) {
+      return { expired: true, label: 'expired' };
+    }
+    const minutes = Math.round(ms / 60_000);
+    return { expired: false, label: minutes >= 60 ? `expires in ${Math.round(minutes / 60)}h` : `expires in ${minutes} min` };
   });
 
-  toggleIncomeForm(): void {
-    this.showIncomeForm.set(!this.showIncomeForm());
+  renameForm = this.fb.group({ name: ['', Validators.required] });
+  inviteForm = this.fb.group({ email: ['', [Validators.required, Validators.email]] });
+
+  memberName(userId: string): string {
+    return this.members().find((m) => m.userId === userId)?.name ?? '';
   }
 
-  addAdditionalIncome(): void {
-    const user = this.activeUser();
+  joinedLabel(iso: string): string {
+    return iso ? shortDate(iso.slice(0, 10), true) : '';
+  }
+
+  logIncome(): void {
+    this.ui.openQuickAdd({ type: 'income' });
+  }
+
+  logSharedExpense(): void {
+    this.ui.openQuickAdd({ type: 'expense' });
+  }
+
+  // ── Rename ──
+  openRename(): void {
+    this.renameForm.reset({ name: this.household()?.name ?? '' });
+    this.renaming.set(true);
+  }
+
+  saveName(): void {
     const household = this.household();
-    if (!user || !household) return;
-    const source = this.incomeSourceInput().trim();
-    const amount = this.incomeAmountInput();
-    if (!source || !amount || amount <= 0) {
-      this.toast.warning('Please enter a source and amount.');
+    const name = (this.renameForm.value.name ?? '').trim();
+    if (!household || !name) {
+      this.renameForm.markAllAsTouched();
       return;
     }
-    const entry = {
-      id: crypto.randomUUID(),
-      userId: user.id,
-      householdId: household.id,
-      source,
-      amount,
-      date: new Date().toISOString()
-    };
-    this.appState.addAdditionalIncome(entry);
-    this.incomeSourceInput.set('');
-    this.incomeAmountInput.set(null);
-    this.showIncomeForm.set(false);
-    this.toast.success(`Added $${amount} from ${source}.`);
+    this.appState.updateHouseholds(this.appState.households().map((h) => (h.id === household.id ? { ...h, name } : h)));
+    this.renaming.set(false);
+    this.toast.success('Household renamed.');
   }
 
-  removeAdditionalIncome(entryId: string): void {
-    this.appState.deleteAdditionalIncome(entryId);
-    this.toast.success('Income entry removed.');
+  // ── Invites ──
+  openInvite(): void {
+    this.inviteForm.reset({ email: '' });
+    this.copied.set(false);
+    this.inviting.set(true);
   }
 
-  setContribution(goalId: string, value: string): void {
-    const amount = Number(value);
-    this.contributionInput.set({
-      ...this.contributionInput(),
-      [goalId]: Number.isFinite(amount) ? amount : 0
-    });
+  inviteLink(): string {
+    const code = this.household()?.inviteCode ?? '';
+    return `${window.location.origin}/#/auth?inviteCode=${encodeURIComponent(code)}`;
   }
 
-  addContribution(goalId: string): void {
-    const amount = this.contributionInput()[goalId] ?? 0;
-    if (amount <= 0) {
-      return;
+  async copyLink(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.inviteLink());
+      this.copied.set(true);
+      this.toast.success('Invite link copied.');
+      setTimeout(() => this.copied.set(false), 2500);
+    } catch {
+      this.toast.warning('Could not copy. Select the code and copy it manually.');
     }
-
-    const added = this.appState.addSavingsContribution(goalId, amount, this.activeUser()?.id);
-    if (!added) {
-      this.toast.warning('Unable to add contribution right now.');
-      return;
-    }
-
-    this.contributionInput.set({
-      ...this.contributionInput(),
-      [goalId]: 0
-    });
-    this.toast.success(`$${amount} contributed.`);
   }
 
-  openJoinModal(): void {
-    this.joinMessage = '';
-    this.joinModalOpen.set(true);
-  }
-
-  closeJoinModal(): void {
-    this.joinModalOpen.set(false);
-  }
-
-  saveHouseholdName(): void {
+  async regenerateCode(): Promise<void> {
     const household = this.household();
-    if (!household || this.householdNameForm.invalid) {
-      this.householdNameForm.markAllAsTouched();
+    const user = this.user();
+    if (!household || !user) {
       return;
     }
-
-    const name = (this.householdNameForm.value.name ?? '').trim();
-    if (!name) {
-      return;
-    }
-
-    const next = { ...household, name };
+    const code = createInviteCode();
+    const expiresAt = createInviteExpiry(24);
     this.appState.updateHouseholds(
-      this.appState.households().map((item) => (item.id === next.id ? next : item))
+      this.appState.households().map((h) => (h.id === household.id ? { ...h, inviteCode: code, inviteCodeExpiresAt: expiresAt } : h))
     );
-    this.householdNameForm.reset({ name: '' });
-    this.toast.success('Household name saved.');
+    try {
+      await this.inviteCodes.writeInviteCode({ code, householdId: household.id, expiresAt, createdByUid: user.id });
+      this.toast.success('New invite code generated. It is valid for 24 hours.');
+    } catch {
+      this.toast.error('The new code could not be registered. Please try again.');
+    }
   }
 
-  async joinHousehold(): Promise<void> {
-    this.joinMessage = '';
-    if (!this.canAttemptJoin()) {
-      this.joinMessage = this.joinDisabledReason();
-      this.toast.warning(this.joinMessage);
+  async sendInvite(): Promise<void> {
+    const household = this.household();
+    const email = (this.inviteForm.value.email ?? '').trim().toLowerCase();
+    if (!household || this.inviteForm.invalid || !email) {
+      this.inviteForm.markAllAsTouched();
       return;
     }
-
-    if (this.joinForm.invalid) {
-      this.joinForm.markAllAsTouched();
-      this.toast.warning('Please enter a valid invite code.');
+    if (this.inviteExpiry().expired) {
+      this.toast.warning('The invite code has expired. Generate a new one first.');
       return;
     }
-
-    this.joinMessage = await this.membership.requestJoinByCode(this.joinForm.value.code ?? '');
-    this.toast.info(this.joinMessage);
-
-    if (this.joinMessage.startsWith('Joined ') || this.joinMessage === 'You are already in this household.') {
-      this.inviteFlow.clearPendingInviteCode();
-      this.joinModalOpen.set(false);
+    if (this.pendingInvites().some((i) => i.email === email)) {
+      this.toast.info(`An invite for ${email} is already pending.`);
+      return;
     }
-
-    this.joinForm.reset({ code: '' });
+    if (this.members().some((m) => m.email.toLowerCase() === email)) {
+      this.toast.info(`${email} is already a member.`);
+      return;
+    }
+    this.sendingInvite.set(true);
+    try {
+      await this.inviteEmail.sendHouseholdInvite({
+        toEmail: email,
+        householdName: household.name || 'our household',
+        inviteCode: household.inviteCode,
+        inviteLink: this.inviteLink(),
+        inviterName: this.user()?.name || 'A TwoCents user'
+      });
+      this.appState.addInvite({ id: createId(), householdId: household.id, email, status: 'pending', sentAt: new Date().toISOString() });
+      this.inviteForm.reset({ email: '' });
+      this.toast.success(`Invite sent to ${email}.`);
+    } catch (error) {
+      this.toast.error(error instanceof Error ? error.message : 'The invite email could not be sent.');
+    } finally {
+      this.sendingInvite.set(false);
+    }
   }
 
-  requestLeave(): void {
-    this.confirmLeave.set(true);
+  cancelInvite(): void {
+    const id = this.confirmCancelInviteId();
+    if (!id) {
+      return;
+    }
+    this.appState.removeInvite(id);
+    this.confirmCancelInviteId.set(null);
+    this.toast.success('Invite cancelled.');
   }
 
-  cancelLeave(): void {
+  // ── Leave ──
+  readonly leaveBlocked = computed(() => {
+    const members = this.members();
+    return this.myRole() === 'owner' && members.length > 1;
+  });
+
+  async leave(): Promise<void> {
     this.confirmLeave.set(false);
-  }
-
-  leaveHousehold(): void {
-    this.confirmLeave.set(false);
-    this.joinMessage = this.membership.leaveCurrentHousehold();
-    this.toast.info(this.joinMessage);
+    const message = await this.membership.leaveCurrentHousehold();
+    if (message.startsWith('You left')) {
+      this.toast.success(message);
+    } else {
+      this.toast.warning(message);
+    }
   }
 }
+
+const initials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return '?';
+  }
+  return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
+};

@@ -19,13 +19,11 @@ import { AuthSession, User } from '../models/app.models';
 import { AppStateService } from './app-state.service';
 import { FirebaseClientService } from './firebase-client.service';
 import { StorageService } from './storage.service';
+import { AdminService } from './admin.service';
 
 const STORAGE_KEYS = {
   auth: 'bt_auth'
 };
-
-const SESSION_DURATION_MS = 1000 * 60 * 60;
-const ADMIN_EMAIL = 'amishu197@gmail.com';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -33,60 +31,54 @@ export class AuthService {
   private readonly firebase = inject(FirebaseClientService);
   private readonly storage = inject(StorageService);
   private readonly router = inject(Router);
-  private expiredSessionAtStartup = false;
+  private readonly admin = inject(AdminService);
 
   private readonly sessionSignal = signal<AuthSession | null>(
     this.storage.getItem<AuthSession | null>(STORAGE_KEYS.auth, null)
   );
 
   readonly session = computed(() => this.sessionSignal());
-  readonly isAuthenticated = computed(() => {
-    const session = this.sessionSignal();
-    if (!session?.isAuthenticated) {
-      return false;
-    }
-
-    return new Date(session.expiresAt).getTime() > Date.now();
-  });
+  // Firebase owns token lifetime and refresh. The cached session only exists so
+  // guards can answer synchronously on reload; it never expires on its own
+  // (the old one-hour cutoff signed people out mid-session for no reason).
+  readonly isAuthenticated = computed(() => Boolean(this.sessionSignal()?.isAuthenticated));
+  // False until Firebase has reported the initial auth state for this page load.
+  readonly authResolved = computed(() => this.authResolvedSignal());
+  private readonly authResolvedSignal = signal(false);
 
   constructor() {
-    const existingSession = this.sessionSignal();
-    if (existingSession && new Date(existingSession.expiresAt).getTime() <= Date.now()) {
-      this.expiredSessionAtStartup = true;
-      this.clearSession();
-    }
-
     void setPersistence(this.firebase.auth, browserLocalPersistence);
 
     onAuthStateChanged(this.firebase.auth, async (authUser) => {
-      if (this.expiredSessionAtStartup) {
-        this.expiredSessionAtStartup = false;
-        await signOut(this.firebase.auth);
-        this.clearSession();
-        return;
-      }
-
+      this.authResolvedSignal.set(true);
       if (!authUser) {
+        const hadSession = Boolean(this.sessionSignal());
         this.clearSession();
+        // Signed out server-side (revoked, deleted, or another tab) while on a
+        // protected page: send the user back to sign in instead of leaving an
+        // empty shell on screen.
+        if (hadSession && !this.isPublicRoute()) {
+          void this.router.navigate(['/auth']);
+        }
         return;
       }
 
       const idToken = await authUser.getIdToken();
-      const existing = this.sessionSignal();
-      const isExistingSessionValid =
-        existing?.userId === authUser.uid && new Date(existing.expiresAt).getTime() > Date.now();
-
       this.setSession({
         userId: authUser.uid,
         token: idToken,
-        expiresAt: isExistingSessionValid
-          ? existing.expiresAt
-          : new Date(Date.now() + SESSION_DURATION_MS).toISOString(),
+        // Informational only; see isAuthenticated.
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
         isAuthenticated: true
       });
 
       await this.ensureUserProfile(authUser.uid, authUser.displayName ?? 'User', authUser.email ?? '');
     });
+  }
+
+  private isPublicRoute(): boolean {
+    const url = this.router.url;
+    return url.startsWith('/auth') || url.startsWith('/terms') || url.startsWith('/privacy');
   }
 
   async signIn(email: string, password: string): Promise<void> {
@@ -164,13 +156,8 @@ export class AuthService {
     const users = hasUser
       ? existingUsers.map((item) => (item.id === user.id ? user : item))
       : [user, ...existingUsers];
+    // AppState upserts the signed-in user's document as part of updateUsers.
     this.appState.updateUsers(users);
-    if (this.firebase.auth.currentUser?.uid === user.id) {
-      void setDoc(doc(this.firebase.firestore, 'users', user.id), {
-        ...user,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    }
   }
 
   isOnboarded(): boolean {
@@ -178,9 +165,9 @@ export class AuthService {
   }
 
   isAdminUser(): boolean {
-    const activeEmail = this.getActiveUser()?.email?.trim().toLowerCase();
-    const authEmail = this.firebase.auth.currentUser?.email?.trim().toLowerCase();
-    return activeEmail === ADMIN_EMAIL || authEmail === ADMIN_EMAIL;
+    const activeEmail = this.getActiveUser()?.email;
+    const authEmail = this.firebase.auth.currentUser?.email;
+    return this.admin.isAdminEmail(activeEmail) || this.admin.isAdminEmail(authEmail);
   }
 
   async resetAllDataKeepingCurrentUser(): Promise<void> {

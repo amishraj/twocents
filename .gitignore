@@ -42,3 +42,15 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
+firestore-debug.log
+
+# Cloud Functions local secrets
+functions/.secret.local
+functions/node_modules/
+functions/.env
+firebase-debug.log
+ui-debug.log
+pubsub-debug.log
+
+# Claude Code worktrees
+.claude/worktrees/

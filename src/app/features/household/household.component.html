@@ -1,294 +1,271 @@
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1>Household</h1>
-      <p>{{ household()?.name || 'Household overview' }}</p>
-    </div>
-    <div class="links">
-      <a routerLink="/budgets">Manage budgets</a>
-      <a routerLink="/savings">Manage savings</a>
-      <button type="button" (click)="openJoinModal()">Join household</button>
-      @if (canLeaveHousehold()) {
-        <button
-          type="button"
-          class="leave-icon-btn"
-          (click)="requestLeave()"
-          aria-label="Leave household"
-        >
-          <svg viewBox="0 0 24 24" fill="none"><path d="M14 7h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M10 17 6 12l4-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 12h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-        </button>
-      }
-    </div>
-  </div>
-
-  @if (needsHouseholdName()) {
-    <section class="card name-prompt-card">
-      <div class="section-head">
-        <h3>Name your household</h3>
-        <span>Members can recognize and trust invite links faster.</span>
+  @if (household(); as h) {
+    <div class="page-header">
+      <div>
+        <h1>{{ h.name || 'Your household' }}</h1>
+        <p class="subtitle">
+          {{ members().length }} member{{ members().length === 1 ? '' : 's' }} · you're the {{ myRole() }}
+          @if (!h.name) { · <button type="button" class="link-btn" (click)="openRename()">give it a name</button> }
+        </p>
       </div>
-      <form class="join-form" [formGroup]="householdNameForm" (ngSubmit)="saveHouseholdName()">
-        <input type="text" formControlName="name" placeholder="e.g. The Raj Home" />
-        <button type="submit">Save name</button>
-      </form>
-    </section>
-  }
-
-  <section class="card income-hero">
-    <div class="income-left">
-      <div class="income-chart-wrap">
-        <canvas #incomeGaugeCanvas></canvas>
-        <div class="income-center">
-          <span class="income-pct">{{ monthlySpendPercent() }}%</span>
-          <span class="income-center-sub">spent</span>
-        </div>
+      <div class="page-actions">
+        <button type="button" class="btn btn-ghost" (click)="openRename()"><app-icon name="edit" /> Rename</button>
+        <button type="button" class="btn btn-primary" (click)="openInvite()"><app-icon name="users" /> Invite</button>
       </div>
     </div>
-    <div class="income-right">
-      <p class="eyebrow">Monthly household income</p>
-      <h2>${{ monthlyHouseholdIncome() | number: '1.0-0' }}</h2>
-      <div class="income-spend">
-        <span class="spend-label">Spent this month</span>
-        <span class="spend-amount">${{ monthlySharedSpend() | number: '1.0-0' }}</span>
+
+    <!-- ── This month ── -->
+    <section class="stat-grid">
+      <div class="stat">
+        <span class="stat-label">Shared spending</span>
+        <span class="stat-value">{{ sharedSpent() | money:'none' }}</span>
+        <span class="stat-delta">{{ monthLabel() }}</span>
       </div>
-      <div class="income-track">
-        <div class="income-fill" [style.width.%]="monthlySpendPercent()"></div>
+      <div class="stat">
+        <span class="stat-label">Expected income</span>
+        <span class="stat-value">{{ expectedIncome() | money:'none' }}</span>
+        <span class="stat-delta">Members' monthly income, from Settings</span>
       </div>
-      @if (monthlyHouseholdIncome() > 0) {
-        <p class="income-sub"><strong>${{ monthlyHouseholdIncome() - monthlySharedSpend() | number: '1.0-0' }}</strong> remaining</p>
-      }
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h3>Member contribution</h3>
-      <span>Income + shared spend this month</span>
-    </div>
-    <div class="member-grid">
-      @for (member of memberContribution(); track member.userId) {
-        <div class="member-card">
-          <div class="row">
-            <strong>{{ member.displayName }}</strong>
-            <span class="chip">{{ member.role }}</span>
-          </div>
-          <div class="line">Income: ${{ member.incomeMonthly | number: '1.0-0' }}/mo ({{ member.incomePct }}%)</div>
-          <div class="line">
-            Shared spend paid: ${{ member.sharedSpend | number: '1.0-0' }} ({{ member.spendPct }}%)
-          </div>
-        </div>
-      }
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h3>Additional income</h3>
-      @if (!showIncomeForm()) {
-        <button type="button" class="add-income-btn" (click)="toggleIncomeForm()">+ Add income</button>
-      } @else {
-        <button type="button" class="add-income-btn cancel" (click)="toggleIncomeForm()">Cancel</button>
-      }
-    </div>
-
-    @if (showIncomeForm()) {
-      <form class="income-form" (ngSubmit)="addAdditionalIncome()">
-        <div class="income-form-row">
-          <input
-            type="text"
-            placeholder="Source (e.g. Freelance, bonus)"
-            [value]="incomeSourceInput()"
-            (input)="incomeSourceInput.set($any($event.target).value)"
-          />
-          <div class="income-amount-wrap">
-            <span class="currency-prefix">$</span>
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="Amount"
-              [value]="incomeAmountInput() ?? ''"
-              (input)="incomeAmountInput.set(+$any($event.target).value)"
-            />
-          </div>
-          <button type="submit" class="primary">Add</button>
-        </div>
-      </form>
-    }
-
-    @if (allMembersAdditionalIncomeThisMonth().length > 0 || showIncomeForm()) {
-      @for (memberIncome of allMembersAdditionalIncomeThisMonth(); track memberIncome.userId) {
-        @if (memberIncome.additionalIncome > 0) {
-          <div class="income-entry">
-            <div class="income-entry-left">
-              <span class="income-source">{{ memberIncome.displayName }}</span>
-              <span class="income-date">{{ memberIncome.additionalIncome | currency:'USD':'symbol':'1.0-0' }}</span>
-            </div>
-          </div>
-        }
-      }
-      @if (totalAdditionalIncomeThisMonth() > 0) {
-        <div class="income-total">+ ${{ totalAdditionalIncomeThisMonth() | number: '1.0-0' }} total this month</div>
-      }
-    } @else if (!showIncomeForm()) {
-      <p class="meta empty-msg">No additional income yet. Add bonuses, freelance, or side earnings here.</p>
-    }
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h3>Recent</h3>
-    </div>
-    <div class="tx-list">
-      @for (transaction of recentHouseholdTransactions(); track transaction.id) {
-        <app-tx-row
-          [transaction]="transaction"
-          [categoryName]="transaction.categoryName"
-          [paidByName]="transaction.paidByName"
-          [showPaidBy]="true"
-          [showScope]="false"
-          [showAmount]="true"
-          [dateLeft]="true"
-        />
-      }
-      @if (recentHouseholdTransactions().length === 0) {
-        <p class="empty-msg">No recent transactions.</p>
-      }
-    </div>
-  </section>
-
-  @if (upcomingHouseholdTransactions().length > 0) {
-    <section class="card">
-      <div class="section-head">
-        <h3>Upcoming</h3>
+      <div class="stat">
+        <span class="stat-label">Income logged</span>
+        <span class="stat-value pos">{{ loggedIncome() | money:'none' }}</span>
+        <button type="button" class="link-btn tiny" (click)="logIncome()">Log income</button>
       </div>
-      <div class="tx-list">
-        @for (transaction of upcomingHouseholdTransactions(); track transaction.id) {
-          <app-tx-row
-            [transaction]="transaction"
-            [categoryName]="transaction.categoryName"
-            [paidByName]="transaction.paidByName"
-            [showPaidBy]="true"
-            [showScope]="false"
-            [showAmount]="true"
-            [dateLeft]="true"
-          />
-        }
+      <div class="stat">
+        <span class="stat-label">Spent of income</span>
+        <span class="stat-value">{{ expectedIncome() > 0 ? spendOfIncomePercent() + '%' : '—' }}</span>
+        <span class="stat-delta">{{ expectedIncome() > 0 ? 'Shared spend vs expected income' : 'Add incomes to see this' }}</span>
       </div>
     </section>
-  }
 
-  <section class="card">
-    <div class="section-head">
-      <h3>Shared budgets</h3>
-      <span>{{ household()?.name || 'Household' }}</span>
-    </div>
-    @if (sharedBudgetSummaries().length > 0) {
-      <div class="budget-grid">
-        @for (item of sharedBudgetSummaries(); track item.budget.id) {
-          <div class="budget-gauge-card">
-            <div class="gauge-wrap">
-              <canvas #budgetGaugeCanvas></canvas>
-              <div class="gauge-center">
-                <span class="gauge-pct">{{ item.percent }}%</span>
+    <div class="grid-2">
+      <!-- ── Who paid ── -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2>Who paid what</h2>
+            <span class="hint">Shared expenses this month, compared with an income-weighted fair share</span>
+          </div>
+        </div>
+        @if (sharedSpent() > 0) {
+          <div class="contrib-list">
+            @for (m of contributions(); track m.userId) {
+              <div class="contrib">
+                <div class="contrib-top">
+                  <span class="person"><span class="avatar">{{ m.initials }}</span>{{ m.name }}{{ m.isYou ? ' (you)' : '' }}</span>
+                  <span class="tnum"><strong>{{ m.paid | money:'none' }}</strong><span class="faint">&nbsp;· {{ (m.paidShare * 100) | number:'1.0-0' }}%</span></span>
+                </div>
+                <div class="progress">
+                  <div class="progress-fill" [style.width.%]="m.paidShare * 100"></div>
+                  @if (expectedIncome() > 0) {
+                    <span class="progress-marker" [style.left.%]="m.fairShare * 100" title="Fair share based on income"></span>
+                  }
+                </div>
+                @if (expectedIncome() > 0) {
+                  <span class="tiny faint">
+                    Fair share {{ (m.fairShare * 100) | number:'1.0-0' }}% ({{ m.fairAmount | money:'none' }}) ·
+                    @if (m.difference > 1) { paid <span class="pos">{{ m.difference | money:'none' }} more</span> }
+                    @else if (m.difference < -1) { paid <span class="warn-text">{{ -m.difference | money:'none' }} less</span> }
+                    @else { right on share }
+                  </span>
+                }
               </div>
-            </div>
-            <div class="gauge-label">
-              <span class="gauge-dot" [style.background]="item.category?.color"></span>
-              <span class="gauge-name">{{ item.category?.name || 'Category' }}</span>
-            </div>
-            <div class="gauge-sub">${{ item.spent | number: '1.0-0' }} / ${{ item.budget.limit | number: '1.0-0' }}</div>
+            }
+          </div>
+        } @else {
+          <div class="empty compact">
+            <p>No shared expenses this month yet.</p>
+            <button type="button" class="btn btn-sm btn-ghost" (click)="logSharedExpense()">Log a shared expense</button>
           </div>
         }
-      </div>
-    } @else {
-      <p class="meta empty-msg">No shared budgets yet.</p>
-    }
-  </section>
+      </section>
 
-  <section class="card">
-    <div class="section-head">
-      <h3>Shared savings goals</h3>
-      <span>Track progress and add contributions</span>
-    </div>
-    <div class="savings-goal-grid">
-      @for (goal of sharedSavingsGoals(); track goal.id) {
-        <div class="savings-goal-card">
-          <div class="goal-head">
-            <div>
-              <strong>{{ goal.name }}</strong>
-              <p class="meta">{{ goal.accountName }}</p>
-            </div>
-            <span class="status-chip" [ngClass]="sharedGoalTone(goal.id)">{{ sharedGoalStatus(goal.id) }}</span>
-          </div>
-
-          <div class="goal-progress">
-            <div class="goal-track">
-              <div class="goal-fill" [style.width.%]="sharedGoalProgress(goal.id)" [style.background]="sharedGoalProgressColor(goal.id)"></div>
-            </div>
-            <div class="meta">{{ goal.currentAmount | number: '1.0-0' }} of {{ goal.targetAmount | number: '1.0-0' }}</div>
-          </div>
-
-          <div class="contribution-row">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              [value]="contributionInput()[goal.id] || 0"
-              (input)="setContribution(goal.id, $any($event.target).value)"
-            />
-            <button type="button" (click)="addContribution(goal.id)">Add amount</button>
-          </div>
+      <!-- ── Members ── -->
+      <section class="card flush">
+        <div class="card-header">
+          <h2>Members</h2>
+          <button type="button" class="link-btn small" (click)="openInvite()">Invite someone</button>
         </div>
-      }
-      @if (sharedSavingsGoals().length === 0) {
-        <p class="meta empty-msg">No shared savings goals yet.</p>
-      }
+        <div class="list">
+          @for (m of members(); track m.userId) {
+            <div class="list-row">
+              <span class="avatar lg">{{ m.initials }}</span>
+              <div class="list-main">
+                <span class="list-title">{{ m.name }}{{ m.isYou ? ' (you)' : '' }} <span class="chip">{{ m.role }}</span></span>
+                <span class="list-meta">{{ m.email || 'No email' }} · joined {{ joinedLabel(m.joinedAt) }}</span>
+              </div>
+              <span class="list-amount small muted">{{ m.incomeMonthly | money:'none' }}/mo</span>
+            </div>
+          }
+          @for (invite of pendingInvites(); track invite.id) {
+            <div class="list-row pending">
+              <span class="avatar lg faint"><app-icon name="mail" size="16" /></span>
+              <div class="list-main">
+                <span class="list-title">{{ invite.email }} <span class="chip warn">Invited</span></span>
+                <span class="list-meta">Sent {{ joinedLabel(invite.sentAt) }}</span>
+              </div>
+              <button type="button" class="btn-icon danger" (click)="confirmCancelInviteId.set(invite.id)" aria-label="Cancel invite"><app-icon name="close" /></button>
+            </div>
+          }
+        </div>
+      </section>
     </div>
-  </section>
 
-  @if (joinModalOpen()) {
-    <button class="join-modal-backdrop" type="button" (click)="closeJoinModal()" aria-label="Close join household modal"></button>
-    <section class="join-modal" role="dialog" aria-modal="true" aria-label="Join household">
-      <div class="join-modal-head">
-        <h3>Join household</h3>
-        <button type="button" class="close-btn" (click)="closeJoinModal()" aria-label="Close">✕</button>
+    <div class="grid-2">
+      <!-- ── Shared budgets ── -->
+      <section class="card flush">
+        <div class="card-header">
+          <h2>Shared budgets</h2>
+          <a routerLink="/budgets" class="card-link">Manage</a>
+        </div>
+        @if (sharedBudgets().length > 0) {
+          <div class="mini-list">
+            @for (item of sharedBudgets(); track item.budget.id) {
+              <div class="mini">
+                <div class="spread">
+                  <span class="row"><span class="dot" [style.background]="item.category?.color ?? 'var(--text-3)'"></span><strong>{{ item.category?.name ?? 'Category' }}</strong>
+                    <span class="chip" [class.ok]="item.status === 'ok'" [class.warn]="item.status === 'warning'" [class.over]="item.status === 'over'">{{ item.status === 'over' ? 'Over' : item.status === 'warning' ? 'Close' : 'On track' }}</span>
+                  </span>
+                  <span class="tnum small">{{ item.spent | money:'none' }} <span class="faint">/ {{ item.budget.limit | money:'none' }}</span></span>
+                </div>
+                <div class="progress thin"><div class="progress-fill" [class.ok]="item.status === 'ok'" [class.warn]="item.status === 'warning'" [class.over]="item.status === 'over'" [style.width.%]="item.percent"></div></div>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty compact"><p>No shared budgets yet. <a routerLink="/budgets">Create one</a> for groceries, rent or bills.</p></div>
+        }
+      </section>
+
+      <!-- ── Shared goals ── -->
+      <section class="card flush">
+        <div class="card-header">
+          <h2>Shared savings</h2>
+          <a routerLink="/savings" class="card-link">Manage</a>
+        </div>
+        @if (sharedGoals().length > 0) {
+          <div class="mini-list">
+            @for (item of sharedGoals(); track item.goal.id) {
+              <div class="mini">
+                <div class="spread">
+                  <strong>{{ item.goal.name }}</strong>
+                  <span class="tnum small">{{ item.goal.currentAmount | money:'none' }} <span class="faint">/ {{ item.goal.targetAmount | money:'none' }}</span></span>
+                </div>
+                <div class="progress thin"><div class="progress-fill ok" [style.width.%]="item.percent"></div></div>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty compact"><p>No shared goals yet. <a routerLink="/savings">Start one</a> you're saving for together.</p></div>
+        }
+      </section>
+    </div>
+
+    <!-- ── Recent shared ── -->
+    <section class="card flush">
+      <div class="card-header">
+        <h2>Recent shared activity</h2>
+        <a routerLink="/transactions" [queryParams]="{ scope: 'shared' }" class="card-link">View all</a>
       </div>
-      <p class="meta">Enter an invite code from a household owner or manager.</p>
-
-      <form class="join-form" [formGroup]="joinForm" (ngSubmit)="joinHousehold()">
-        <input type="text" formControlName="code" placeholder="ABC123" [disabled]="!canAttemptJoin()" />
-        <button type="submit" [disabled]="!canAttemptJoin()">Join</button>
-      </form>
-
-      @if (!canAttemptJoin()) {
-        <p class="meta blocked-message">{{ joinDisabledReason() }}</p>
-      }
-
-      @if (joinMessage) {
-        <p class="meta">{{ joinMessage }}</p>
+      @if (recentShared().length > 0) {
+        <div class="list">
+          @for (tx of recentShared(); track tx.id) {
+            <app-tx-row [transaction]="tx" [showDate]="true" [showScope]="false" [showPaidBy]="members().length > 1" [paidByName]="memberName(tx.paidByUserId)" />
+          }
+        </div>
+      } @else {
+        <div class="empty compact"><p>Nothing shared yet.</p></div>
       }
     </section>
+
+    <!-- ── Leave ── -->
+    <section class="card leave">
+      <div>
+        <h3>Leave household</h3>
+        <p class="small muted">
+          @if (leaveBlocked()) {
+            You're the owner and other members depend on this household. Remove or transfer them before leaving.
+          } @else {
+            You'll go back to personal-only mode and lose access to shared data.
+          }
+        </p>
+      </div>
+      <button type="button" class="btn btn-danger" [disabled]="leaveBlocked()" (click)="confirmLeave.set(true)">Leave</button>
+    </section>
+  } @else {
+    <section class="card">
+      <div class="empty">
+        <span class="empty-icon"><app-icon name="users" /></span>
+        <h3>You're not in a household</h3>
+        <p>Create one to share budgets and expenses with a partner, or join with an invite code.</p>
+        <a routerLink="/onboarding" class="btn btn-primary">Create or join</a>
+      </div>
+    </section>
+  }
+
+  @if (renaming()) {
+    <app-sheet title="Rename household" (closed)="renaming.set(false)">
+      <form class="form" [formGroup]="renameForm" (ngSubmit)="saveName()">
+        <div class="field">
+          <label for="h-name">Name</label>
+          <input id="h-name" type="text" formControlName="name" placeholder="e.g. The Raj home" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" (click)="renaming.set(false)">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </app-sheet>
+  }
+
+  @if (inviting() && household(); as h) {
+    <app-sheet title="Invite to your household" subtitle="Share the link or code, or send it by email. Each code works once." (closed)="inviting.set(false)">
+      <div class="stack invite-stack">
+        <div class="code-box">
+          <div>
+            <span class="field-label">Invite code</span>
+            <div class="code">{{ h.inviteCode }}</div>
+            <span class="tiny" [class.neg]="inviteExpiry().expired" [class.faint]="!inviteExpiry().expired">{{ inviteExpiry().label || 'no expiry' }}</span>
+          </div>
+          <div class="code-actions">
+            <button type="button" class="btn btn-sm btn-ghost" (click)="copyLink()">
+              <app-icon [name]="copied() ? 'check' : 'copy'" size="16" /> {{ copied() ? 'Copied' : 'Copy link' }}
+            </button>
+            <button type="button" class="btn btn-sm btn-quiet" (click)="regenerateCode()"><app-icon name="refresh" size="16" /> New code</button>
+          </div>
+        </div>
+        <form class="form" [formGroup]="inviteForm" (ngSubmit)="sendInvite()">
+          <div class="field">
+            <label for="inv-email">Send by email</label>
+            <div class="row">
+              <input id="inv-email" type="email" formControlName="email" placeholder="partner@email.com" />
+              <button type="submit" class="btn btn-primary" [disabled]="sendingInvite()">{{ sendingInvite() ? 'Sending…' : 'Send' }}</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </app-sheet>
   }
 
   @if (confirmLeave()) {
-    @if (leaveBlockedByConsent()) {
-      <app-confirm-modal
-        title="Leave disabled"
-        message="As household owner, you need consent from all other members before leaving."
-        confirmLabel="Got it"
-        (cancel)="cancelLeave()"
-        (confirm)="cancelLeave()"
-      />
-    } @else {
-      <app-confirm-modal
-        title="Leave household?"
-        message="You will lose access to shared data and return to personal-only mode."
-        confirmLabel="Leave"
-        [danger]="true"
-        (cancel)="cancelLeave()"
-        (confirm)="leaveHousehold()"
-      />
-    }
+    <app-confirm-modal
+      title="Leave this household?"
+      message="You'll return to personal-only mode. Shared budgets, goals and transactions stay with the household."
+      confirmLabel="Leave household"
+      [danger]="true"
+      (dismiss)="confirmLeave.set(false)"
+      (confirm)="leave()"
+    />
+  }
+
+  @if (confirmCancelInviteId()) {
+    <app-confirm-modal
+      title="Cancel this invite?"
+      message="The person will no longer be listed as invited. The code itself keeps working until it expires."
+      confirmLabel="Cancel invite"
+      [danger]="true"
+      (dismiss)="confirmCancelInviteId.set(null)"
+      (confirm)="cancelInvite()"
+    />
   }
 </div>

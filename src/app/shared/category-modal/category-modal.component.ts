@@ -1,193 +1,134 @@
-import { Component, EventEmitter, inject, Output } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
 import { ToastService } from '../toast/toast.service';
-import { Scope } from '../../core/models/app.models';
+import { BudgetCategory, Scope } from '../../core/models/app.models';
 import { createId } from '../../core/utils/id';
+import { SheetComponent } from '../sheet/sheet.component';
 
+export const CATEGORY_COLORS = [
+  '#2563eb', '#0891b2', '#059669', '#65a30d', '#ca8a04', '#ea580c',
+  '#dc2626', '#db2777', '#9333ea', '#4f46e5', '#64748b', '#0f766e'
+];
+
+// Create or edit a category. Emits the category id on save.
 @Component({
   selector: 'app-category-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [ReactiveFormsModule, SheetComponent],
   template: `
-    <div class="overlay" (click)="cancel()"></div>
-    <div class="modal">
-      <div class="modal-head">
-        <h3>New category</h3>
-        <button type="button" class="close-btn" (click)="cancel()">
-          <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-      </div>
-      <form [formGroup]="form" (ngSubmit)="submit()" class="modal-form">
+    <app-sheet [title]="category ? 'Edit category' : 'New category'" (closed)="closed.emit()">
+      <form class="form" [formGroup]="form" (ngSubmit)="submit()">
         <div class="field">
-          <label>Name</label>
-          <input type="text" formControlName="name" placeholder="e.g. Groceries, Rent" />
+          <label for="cat-name">Name</label>
+          <input id="cat-name" type="text" formControlName="name" placeholder="e.g. Groceries, Rent, Fun" autocomplete="off" />
         </div>
         <div class="field">
-          <label>Default scope</label>
-          <select formControlName="defaultScope">
-            <option value="shared">Shared</option>
-            <option value="personal">Personal</option>
+          <span class="field-label">Color</span>
+          <div class="colors">
+            @for (color of colors; track color) {
+              <button
+                type="button"
+                class="color"
+                [class.active]="form.value.color === color"
+                [style.background]="color"
+                (click)="form.patchValue({ color })"
+                [attr.aria-label]="'Use color ' + color"
+              ></button>
+            }
+          </div>
+        </div>
+        <div class="field">
+          <label for="cat-scope">Usually</label>
+          <select id="cat-scope" formControlName="defaultScope">
+            <option value="shared">Shared household spending</option>
+            <option value="personal">Personal spending</option>
           </select>
+          <span class="hint">Only a default for new entries. You can change scope on any transaction.</span>
         </div>
-        <div class="actions">
-          <button type="button" class="ghost" (click)="cancel()">Cancel</button>
-          <button type="submit" class="primary">Create category</button>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" (click)="closed.emit()">Cancel</button>
+          <button type="submit" class="btn btn-primary">{{ category ? 'Save' : 'Create category' }}</button>
         </div>
       </form>
-    </div>
+    </app-sheet>
   `,
   styles: [`
-    .overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.4);
-      backdrop-filter: blur(2px);
-      z-index: 60;
-    }
-
-    .modal {
-      position: fixed;
-      z-index: 61;
-      inset: auto 0 0 0;
-      background: var(--surface-elevated);
-      padding: 1.5rem;
-      border-radius: 24px 24px 0 0;
-      box-shadow: var(--shadow-strong);
-    }
-
-    .modal-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .modal-head h3 {
-      margin: 0;
-      font-family: var(--font-display);
-    }
-
-    .close-btn {
-      border: none;
-      background: var(--surface-strong);
-      color: var(--text-strong);
-      width: 36px;
-      height: 36px;
-      border-radius: 12px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal-form {
-      margin-top: 1.25rem;
-      display: grid;
-      gap: 1rem;
-    }
-
-    .field {
-      display: grid;
-      gap: 0.4rem;
-    }
-
-    .field label {
-      font-weight: 600;
-      color: var(--text-muted);
-      font-size: 0.9rem;
-    }
-
-    input, select {
-      padding: 0.7rem 0.8rem;
-      border-radius: 12px;
-      border: 1px solid var(--border-subtle);
-      background: var(--surface);
-      color: var(--text-strong);
-      font-size: 0.95rem;
-    }
-
-    .actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.75rem;
-      margin-top: 0.25rem;
-    }
-
-    .ghost {
-      border: 1px solid var(--border-subtle);
-      background: transparent;
-      padding: 0.65rem 1.1rem;
-      border-radius: 999px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .primary {
-      border: none;
-      background: var(--accent);
-      color: #ffffff;
-      padding: 0.65rem 1.2rem;
-      border-radius: 999px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    @media (min-width: 900px) {
-      .modal {
-        inset: 12% auto auto 50%;
-        transform: translateX(-50%);
-        max-width: 480px;
-        border-radius: 24px;
-      }
-    }
+    .colors { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .color { width: 32px; height: 32px; border-radius: 50%; border: 3px solid transparent; transition: transform 0.12s; }
+    .color:hover { transform: scale(1.08); }
+    .color.active { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg-elevated) inset; }
   `]
 })
-export class CategoryModalComponent {
+export class CategoryModalComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly appState = inject(AppStateService);
   private readonly toast = inject(ToastService);
 
-  private readonly colorPalette = [
-    '#0ea5e9', '#10b981', '#f97316', '#8b5cf6',
-    '#ef4444', '#f59e0b', '#06b6d4', '#ec4899',
-    '#84cc16', '#6366f1'
-  ];
-
+  @Input() category: BudgetCategory | null = null;
   @Output() closed = new EventEmitter<void>();
-  @Output() created = new EventEmitter<string>(); // emits new category ID
+  @Output() saved = new EventEmitter<string>();
+
+  readonly colors = CATEGORY_COLORS;
 
   form = this.fb.group({
     name: ['', Validators.required],
+    color: [CATEGORY_COLORS[0], Validators.required],
     defaultScope: ['shared', Validators.required]
   });
 
-  cancel(): void {
-    this.closed.emit();
-  }
-
-  private randomColor(): string {
-    return this.colorPalette[Math.floor(Math.random() * this.colorPalette.length)];
+  ngOnInit(): void {
+    if (this.category) {
+      this.form.patchValue({
+        name: this.category.name,
+        color: this.category.color,
+        defaultScope: this.category.defaultScope
+      });
+      return;
+    }
+    // Pick the least-used color so new categories stay distinguishable.
+    const used = new Set(this.appState.categories().map((c) => c.color.toLowerCase()));
+    const fresh = CATEGORY_COLORS.find((c) => !used.has(c.toLowerCase()));
+    this.form.patchValue({ color: fresh ?? CATEGORY_COLORS[Math.floor(Math.random() * CATEGORY_COLORS.length)] });
   }
 
   submit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.toast.warning('Please fill in all category fields.');
+      this.toast.warning('Give the category a name.');
+      return;
+    }
+    const value = this.form.getRawValue();
+    const name = (value.name ?? '').trim();
+    const duplicate = this.appState
+      .categories()
+      .some((c) => c.id !== this.category?.id && c.name.trim().toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+      this.toast.warning('A category with this name already exists.');
       return;
     }
 
-    const value = this.form.getRawValue();
+    if (this.category) {
+      this.appState.updateCategory({
+        ...this.category,
+        name,
+        color: value.color ?? this.category.color,
+        defaultScope: (value.defaultScope ?? this.category.defaultScope) as Scope
+      });
+      this.toast.success('Category updated.');
+      this.saved.emit(this.category.id);
+      return;
+    }
+
     const id = createId();
     this.appState.addCategory({
       id,
-      name: value.name ?? 'New category',
-      color: this.randomColor(),
+      name,
+      color: value.color ?? CATEGORY_COLORS[0],
       icon: 'tag',
       defaultScope: (value.defaultScope ?? 'shared') as Scope
     });
-
-    this.toast.success(`Category "${value.name}" created.`);
-    this.created.emit(id);
+    this.toast.success(`Category "${name}" created.`);
+    this.saved.emit(id);
   }
 }

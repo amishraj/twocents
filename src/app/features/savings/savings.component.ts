@@ -1,260 +1,210 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { SavingsGoal, Scope } from '../../core/models/app.models';
 import { AppStateService } from '../../core/services/app-state.service';
 import { AuthService } from '../../core/services/auth.service';
+import { CurrencyService } from '../../core/services/currency.service';
+import { MoneyPipe } from '../../core/pipes/money.pipe';
 import { ToastService } from '../../shared/toast/toast.service';
 import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
-import { Scope } from '../../core/models/app.models';
+import { SheetComponent } from '../../shared/sheet/sheet.component';
+import { IconComponent } from '../../shared/icon/icon.component';
 import { createId } from '../../core/utils/id';
+import { isPositiveAmount, normalizeAmount } from '../../core/utils/money';
+import { shortDate } from '../../core/utils/periods';
+
+interface GoalView {
+  goal: SavingsGoal;
+  percent: number;
+  remaining: number;
+  status: 'done' | 'ok' | 'warn' | 'behind';
+  statusLabel: string;
+  dueLabel: string | null;
+  monthlyNeeded: number | null;
+}
 
 @Component({
   selector: 'app-savings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ConfirmModalComponent],
+  imports: [ReactiveFormsModule, MoneyPipe, ConfirmModalComponent, SheetComponent, IconComponent],
   templateUrl: './savings.component.html',
   styleUrl: './savings.component.scss'
 })
 export class SavingsComponent {
   private readonly fb = inject(FormBuilder);
-  public appState = inject(AppStateService);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
-  contributionInput = signal<Record<string, number>>({});
-  editingGoalId = signal<string | null>(null);
-  confirmDeleteGoalId = signal<string | null>(null);
-  savingsGoals = computed(() => this.appState.savingsGoals());
-  hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
+  readonly appState = inject(AppStateService);
+  readonly currency = inject(CurrencyService);
 
-  showForm = false;
+  readonly editing = signal<SavingsGoal | null>(null);
+  readonly creating = signal(false);
+  readonly contributingTo = signal<SavingsGoal | null>(null);
+  readonly confirmDeleteId = signal<string | null>(null);
+
+  readonly hasHousehold = computed(() => Boolean(this.auth.getActiveUser()?.householdId?.trim()));
+
+  readonly goals = computed<GoalView[]>(() =>
+    this.appState
+      .savingsGoals()
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((goal) => this.describe(goal))
+  );
+
+  readonly totals = computed(() => {
+    const goals = this.appState.savingsGoals();
+    const saved = goals.reduce((sum, g) => sum + g.currentAmount, 0);
+    const target = goals.reduce((sum, g) => sum + g.targetAmount, 0);
+    return {
+      saved,
+      target,
+      percent: target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0,
+      reached: goals.filter((g) => g.targetAmount > 0 && g.currentAmount >= g.targetAmount).length
+    };
+  });
 
   form = this.fb.group({
     name: ['', Validators.required],
     targetAmount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     currentAmount: [0, [Validators.required, Validators.min(0)]],
-    accountName: ['', Validators.required],
-    scope: ['shared', Validators.required]
+    accountName: [''],
+    dueDate: [''],
+    scope: ['personal' as Scope, Validators.required]
   });
 
-  editGoalForm = this.fb.group({
-    name: ['', Validators.required],
-    accountName: ['', Validators.required],
-    targetAmount: [null as number | null, [Validators.required, Validators.min(0.01)]],
-    currentAmount: [0, [Validators.required, Validators.min(0)]],
-    scope: ['shared', Validators.required]
+  contributionForm = this.fb.group({
+    amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
+    logTransaction: [true]
   });
 
-  toggleForm(): void {
-    this.showForm = !this.showForm;
+  private describe(goal: SavingsGoal): GoalView {
+    const percent = goal.targetAmount > 0 ? Math.min(100, (goal.currentAmount / goal.targetAmount) * 100) : 0;
+    const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+    let monthlyNeeded: number | null = null;
+    let dueLabel: string | null = null;
+    if (goal.dueDate) {
+      const due = goal.dueDate.slice(0, 10);
+      dueLabel = shortDate(due, true);
+      const months = Math.max(1, Math.ceil((Date.parse(due) - Date.now()) / (30.4 * 86_400_000)));
+      monthlyNeeded = remaining > 0 ? Math.ceil(remaining / months) : 0;
+    }
+    let status: GoalView['status'] = 'behind';
+    if (remaining === 0) {
+      status = 'done';
+    } else if (percent >= 66) {
+      status = 'ok';
+    } else if (percent >= 33) {
+      status = 'warn';
+    }
+    const statusLabel = status === 'done' ? 'Reached' : status === 'ok' ? 'Almost there' : status === 'warn' ? 'Halfway' : 'Just started';
+    return { goal, percent, remaining, status, statusLabel, dueLabel, monthlyNeeded };
   }
 
-  addGoal(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      this.toast.warning('Please fill in all required fields.');
-      return;
-    }
-
-    const value = this.form.getRawValue();
-    const selectedScope = (value.scope ?? 'shared') as Scope;
-    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
-    if (selectedScope === 'shared' && resolvedScope === 'personal') {
-      this.toast.info('Shared savings goals are locked until you join or create a household. Saved as personal.');
-    }
-
-    this.appState.addSavingsGoal({
-      id: createId(),
-      name: value.name ?? 'Goal',
-      targetAmount: Number(value.targetAmount),
-      currentAmount: Number(value.currentAmount),
-      accountName: value.accountName ?? 'Savings',
-      scope: resolvedScope
-    });
-
-    this.toast.success(`Savings goal "${value.name}" created.`);
-
+  openCreate(): void {
+    this.editing.set(null);
     this.form.reset({
       name: '',
       targetAmount: null,
       currentAmount: 0,
       accountName: '',
+      dueDate: '',
       scope: this.hasHousehold() ? 'shared' : 'personal'
     });
-    this.showForm = false;
+    this.creating.set(true);
   }
 
-  setContribution(goalId: string, value: string): void {
-    const amount = Number(value);
-    this.contributionInput.set({
-      ...this.contributionInput(),
-      [goalId]: Number.isFinite(amount) ? amount : 0
-    });
-  }
-
-  addContribution(goalId: string): void {
-    const amount = this.contributionInput()[goalId] ?? 0;
-    if (amount <= 0) {
-      return;
-    }
-
-    const activeUserId = this.auth.getActiveUser()?.id;
-    const added = this.appState.addSavingsContribution(goalId, amount, activeUserId);
-    if (!added) {
-      this.toast.warning('Unable to add contribution right now.');
-      return;
-    }
-
-    this.toast.success(`$${amount} contributed.`);
-    this.contributionInput.set({
-      ...this.contributionInput(),
-      [goalId]: 0
-    });
-  }
-
-  startEditGoal(goalId: string): void {
-    const goal = this.appState.savingsGoals().find((item) => item.id === goalId);
-    if (!goal) {
-      return;
-    }
-
-    this.editingGoalId.set(goalId);
-    this.editGoalForm.patchValue({
+  openEdit(goal: SavingsGoal): void {
+    this.creating.set(false);
+    this.editing.set(goal);
+    this.form.reset({
       name: goal.name,
-      accountName: goal.accountName,
       targetAmount: goal.targetAmount,
       currentAmount: goal.currentAmount,
+      accountName: goal.accountName,
+      dueDate: goal.dueDate ? goal.dueDate.slice(0, 10) : '',
       scope: goal.scope
     });
   }
 
-  cancelEditGoal(): void {
-    this.editingGoalId.set(null);
+  closeForm(): void {
+    this.creating.set(false);
+    this.editing.set(null);
   }
 
-  setEditCurrentAmount(value: string): void {
-    const parsed = Number(value);
-    this.editGoalForm.patchValue({
-      currentAmount: Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
-    });
-  }
-
-  setEditTargetAmount(value: string): void {
-    const parsed = Number(value);
-    const nextTarget = Number.isFinite(parsed) ? Math.max(parsed, 0.01) : 0.01;
-    const currentAmount = Number(this.editGoalForm.value.currentAmount ?? 0);
-    this.editGoalForm.patchValue({
-      targetAmount: nextTarget,
-      currentAmount: Math.min(currentAmount, nextTarget)
-    });
-  }
-
-  saveGoalEdit(goalId: string): void {
-    if (this.editGoalForm.invalid) {
-      this.editGoalForm.markAllAsTouched();
-      this.toast.warning('Please fill in all required fields.');
+  save(): void {
+    const value = this.form.getRawValue();
+    if (!(value.name ?? '').trim() || !isPositiveAmount(value.targetAmount)) {
+      this.form.markAllAsTouched();
+      this.toast.warning('Give the goal a name and a target above zero.');
       return;
     }
-
-    const value = this.editGoalForm.getRawValue();
-    const selectedScope = (value.scope ?? 'shared') as Scope;
-    const resolvedScope = !this.hasHousehold() && selectedScope === 'shared' ? 'personal' : selectedScope;
-    if (selectedScope === 'shared' && resolvedScope === 'personal') {
-      this.toast.info('Shared savings goals are locked until you join or create a household. Saved as personal.');
+    const scope: Scope = this.hasHousehold() ? ((value.scope ?? 'personal') as Scope) : 'personal';
+    const current = normalizeAmount(value.currentAmount ?? 0);
+    const target = normalizeAmount(value.targetAmount);
+    const next: SavingsGoal = {
+      id: this.editing()?.id ?? createId(),
+      name: (value.name ?? '').trim(),
+      targetAmount: target,
+      currentAmount: Math.max(0, current),
+      accountName: (value.accountName ?? '').trim(),
+      dueDate: value.dueDate ? value.dueDate : undefined,
+      scope
+    };
+    if (this.editing()) {
+      this.appState.updateSavingsGoal(next);
+      this.toast.success('Goal updated.');
+    } else {
+      this.appState.addSavingsGoal(next);
+      this.toast.success(`Goal "${next.name}" created.`);
     }
-
-    const currentAmount = Number(value.currentAmount ?? 0);
-    let targetAmount = Number(value.targetAmount ?? 0);
-    if (targetAmount < currentAmount) {
-      targetAmount = currentAmount;
-      this.toast.info('Target amount adjusted to match current amount.');
-    }
-
-    const nextGoals = this.appState.savingsGoals().map((goal) =>
-      goal.id === goalId
-        ? {
-            ...goal,
-            name: value.name ?? goal.name,
-            accountName: value.accountName ?? goal.accountName,
-            currentAmount,
-            targetAmount,
-            scope: resolvedScope
-          }
-        : goal
-    );
-
-    this.appState.updateSavings(nextGoals);
-    this.editingGoalId.set(null);
-    this.toast.success('Savings goal updated.');
+    this.closeForm();
   }
 
-  requestRemoveGoal(goalId: string): void {
-    this.confirmDeleteGoalId.set(goalId);
+  openContribute(goal: SavingsGoal): void {
+    this.contributionForm.reset({ amount: null, logTransaction: true });
+    this.contributingTo.set(goal);
   }
 
-  cancelRemoveGoal(): void {
-    this.confirmDeleteGoalId.set(null);
-  }
-
-  removeGoal(): void {
-    const goalId = this.confirmDeleteGoalId();
-    if (!goalId) {
-      return;
-    }
-
-    const goal = this.appState.savingsGoals().find((item) => item.id === goalId);
+  contribute(): void {
+    const goal = this.contributingTo();
     if (!goal) {
-      this.confirmDeleteGoalId.set(null);
       return;
     }
-
-    if (goal.currentAmount > 0) {
-      this.confirmDeleteGoalId.set(null);
-      this.toast.warning('You can only delete this goal when current amount is $0.00.');
+    const value = this.contributionForm.getRawValue();
+    if (!isPositiveAmount(value.amount)) {
+      this.contributionForm.markAllAsTouched();
+      this.toast.warning('Enter an amount above zero.');
       return;
     }
-
-    this.appState.removeSavingsGoal(goalId);
-    this.confirmDeleteGoalId.set(null);
-    if (this.editingGoalId() === goalId) {
-      this.editingGoalId.set(null);
+    const amount = normalizeAmount(value.amount);
+    if (value.logTransaction) {
+      const ok = this.appState.addSavingsContribution(goal.id, amount, this.auth.getActiveUser()?.id);
+      if (!ok) {
+        this.toast.error('Could not record the contribution. Please try again.');
+        return;
+      }
+    } else {
+      this.appState.updateSavingsGoal({ ...goal, currentAmount: normalizeAmount(goal.currentAmount + amount) });
     }
-    this.toast.success('Savings goal deleted.');
+    this.contributingTo.set(null);
+    this.toast.success(`${this.currency.format(amount, { decimals: 'always' })} added to ${goal.name}.`);
   }
 
-  goalProgress(goalId: string): number {
-    const goal = this.appState.savingsGoals().find((item) => item.id === goalId);
-    if (!goal || goal.targetAmount <= 0) {
-      return 0;
-    }
-
-    return Math.min(100, (goal.currentAmount / goal.targetAmount) * 100);
+  requestDelete(id: string): void {
+    this.confirmDeleteId.set(id);
   }
 
-  goalProgressColor(goalId: string): string {
-    const progress = this.goalProgress(goalId);
-    const hue = Math.max(0, Math.min(120, Math.round((progress / 100) * 120)));
-    return `hsl(${hue} 78% 48%)`;
-  }
-
-  goalTone(goalId: string): 'danger' | 'warning' | 'success' {
-    const progress = this.goalProgress(goalId);
-    if (progress >= 80) {
-      return 'success';
+  confirmDelete(): void {
+    const id = this.confirmDeleteId();
+    if (!id) {
+      return;
     }
-    if (progress >= 40) {
-      return 'warning';
+    this.appState.removeSavingsGoal(id);
+    this.confirmDeleteId.set(null);
+    if (this.editing()?.id === id) {
+      this.closeForm();
     }
-    return 'danger';
-  }
-
-  goalStatus(goalId: string): string {
-    const tone = this.goalTone(goalId);
-    if (tone === 'success') {
-      return 'Near goal';
-    }
-    if (tone === 'warning') {
-      return 'On track';
-    }
-    return 'Behind';
+    this.toast.success('Goal deleted. Contribution transactions were kept.');
   }
 }

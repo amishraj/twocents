@@ -1,0 +1,195 @@
+rules_version = '2';
+// Phase-E strict Firestore rules — ship AFTER:
+//   1. scripts/bootstrap-admin.ts has provisioned adminFlags/admins
+//   2. scripts/migrate-member-roles.ts has backfilled membersByUid on every household
+//   3. App is deployed dual-writing members[] + membersByUid for several days
+//
+// To deploy, rename this file to firestore.rules and push.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSameUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function householdDocPath(hid) {
+      return /databases/$(database)/documents/households/$(hid);
+    }
+
+    function householdData(hid) {
+      return get(householdDocPath(hid)).data;
+    }
+
+    function householdDataAfter(hid) {
+      return getAfter(householdDocPath(hid)).data;
+    }
+
+    function isMember(hid) {
+      return signedIn() && request.auth.uid in householdData(hid).membersByUid;
+    }
+
+    function roleOf(hid) {
+      return householdData(hid).membersByUid[request.auth.uid].role;
+    }
+
+    function isOwner(hid)          { return isMember(hid) && roleOf(hid) == 'owner'; }
+    function isManagerOrOwner(hid) { return isMember(hid) && (roleOf(hid) == 'owner' || roleOf(hid) == 'manager'); }
+
+    function isMemberAfter(hid) {
+      return signedIn() && request.auth.uid in householdDataAfter(hid).membersByUid;
+    }
+
+    function adminEmails() {
+      return get(/databases/$(database)/documents/adminFlags/admins).data.emails;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/adminFlags/admins)
+        && request.auth.token.email in adminEmails();
+    }
+
+    // ---------- users/{uid} ----------
+    match /users/{uid} {
+      allow read: if isSameUser(uid)
+        || (signedIn() && userDoc(uid).data.householdId != ''
+            && isMember(userDoc(uid).data.householdId));
+      allow create: if isSameUser(uid)
+        && request.resource.data.householdId == '';
+      allow update: if isSameUser(uid)
+        && (
+          request.resource.data.householdId == resource.data.householdId
+          || (request.resource.data.householdId != ''
+              && isMemberAfter(request.resource.data.householdId))
+          || (request.resource.data.householdId == ''
+              && !isMemberAfter(resource.data.householdId))
+        );
+      allow delete: if false;
+
+      match /transactions/{docId}        { allow read, write: if isSameUser(uid); }
+      match /categories/{docId}          { allow read, write: if isSameUser(uid); }
+      match /budgets/{docId}             { allow read, write: if isSameUser(uid); }
+      match /savings/{docId}             { allow read, write: if isSameUser(uid); }
+      match /investments/{docId}         { allow read, write: if isSameUser(uid); }
+      match /recurringTemplates/{docId}  { allow read, write: if isSameUser(uid); }
+      match /additionalIncome/{docId}    { allow read, write: if isSameUser(uid); }
+
+      match /bankConnections/{docId} { allow read, write: if isSameUser(uid) || isAdmin(); }
+      match /bankAccounts/{docId}    { allow read, write: if isSameUser(uid) || isAdmin(); }
+      match /bankIssues/{docId}      { allow read, write: if isSameUser(uid) || isAdmin(); }
+    }
+
+    // ---------- adminFlags ----------
+    match /adminFlags/{docId} {
+      allow read:                   if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- inviteCodes/{code} ----------
+    match /inviteCodes/{code} {
+      allow get:    if signedIn();
+      allow list:   if false;
+      allow create: if signedIn()
+        && isMember(request.resource.data.householdId);
+      // Single-use: acceptedByUid transitions from unset/null to the caller
+      // exactly once; householdId is immutable. (expiresAt is an ISO string, so
+      // freshness is enforced client-side, not via request.time comparison.)
+      allow update: if signedIn()
+        && (!('acceptedByUid' in resource.data) || resource.data.acceptedByUid == null)
+        && request.resource.data.acceptedByUid == request.auth.uid
+        && request.resource.data.householdId == resource.data.householdId;
+      allow delete: if isManagerOrOwner(resource.data.householdId);
+    }
+
+    // ---------- households/{hid} ----------
+    match /households/{hid} {
+      allow read:   if isMember(hid);
+      allow delete: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.membersByUid.keys() == [request.auth.uid]
+        && request.resource.data.membersByUid[request.auth.uid].role == 'owner';
+
+      // Settings change: managers/owners only; membersByUid unchanged.
+      allow update: if isManagerOrOwner(hid)
+        && request.resource.data.membersByUid == resource.data.membersByUid;
+
+      // Owner rotation: any membersByUid change allowed, but only by owner,
+      // and at least one owner must remain.
+      allow update: if isOwner(hid)
+        && request.resource.data.membersByUid.values()
+             .filter(m, m.role == 'owner').size() >= 1;
+
+      // Self-join: only the caller's own row is added, role=='member', and
+      // diff() shows ONLY their key changed.
+      allow update: if signedIn()
+        && !(request.auth.uid in resource.data.membersByUid)
+        && request.auth.uid in request.resource.data.membersByUid
+        && request.resource.data.membersByUid[request.auth.uid].role == 'member'
+        && request.resource.data.membersByUid
+             .diff(resource.data.membersByUid).affectedKeys().hasOnly([request.auth.uid]);
+
+      // Self-leave: only the caller's own row is removed.
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.membersByUid
+        && !(request.auth.uid in request.resource.data.membersByUid)
+        && request.resource.data.membersByUid
+             .diff(resource.data.membersByUid).affectedKeys().hasOnly([request.auth.uid]);
+
+      match /categories/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isManagerOrOwner(hid);
+        allow delete:         if isOwner(hid);
+      }
+      match /budgets/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isManagerOrOwner(hid);
+        allow delete:         if isOwner(hid);
+      }
+      match /transactions/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isMember(hid);
+        allow delete:         if isOwner(hid);
+      }
+      match /savings/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isMember(hid);
+        allow delete:         if isOwner(hid);
+      }
+      match /investments/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isMember(hid);
+        allow delete:         if isOwner(hid);
+      }
+      match /invites/{docId} {
+        allow read:           if isMember(hid);
+        allow create:         if isManagerOrOwner(hid);
+        allow update, delete: if isOwner(hid);
+      }
+      match /householdChangeRequests/{docId} {
+        allow read:   if isMember(hid);
+        allow create: if isMember(hid);
+        allow update: if isOwner(hid);
+        allow delete: if false;
+      }
+      match /recurringTemplates/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isMember(hid);
+        allow delete:         if isOwner(hid);
+      }
+      match /additionalIncome/{docId} {
+        allow read:           if isMember(hid);
+        allow create, update: if isMember(hid);
+        allow delete:         if isOwner(hid);
+      }
+    }
+  }
+}

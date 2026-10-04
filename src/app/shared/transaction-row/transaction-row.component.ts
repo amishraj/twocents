@@ -1,13 +1,19 @@
-import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { Transaction } from '../../core/models/app.models';
 import { AppStateService } from '../../core/services/app-state.service';
+import { MoneyPipe } from '../../core/pipes/money.pipe';
+import { todayLocalDate } from '../../core/utils/dates';
+import { shortDate } from '../../core/utils/periods';
+import { isIncome, txLocalDate } from '../../core/utils/transactions';
+import { IconComponent } from '../icon/icon.component';
 
+// One ledger line. Used by every list in the app so transactions always look
+// the same: category swatch, title, context line, signed amount.
 @Component({
   selector: 'app-tx-row',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [MoneyPipe, IconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './transaction-row.component.html',
   styleUrl: './transaction-row.component.scss'
 })
@@ -15,39 +21,69 @@ export class TransactionRowComponent {
   @Input({ required: true }) transaction!: Transaction;
   @Input() showCategory = true;
   @Input() showScope = true;
+  @Input() showDate = false;
   @Input() showPaidBy = false;
-  @Input() showEditButton = false;
-  @Input() showDeleteButton = false;
-  @Input() showAmount = true;
-  @Input() dateLeft = false;
   @Input() paidByName = '';
   @Input() categoryName = '';
-  @Input() editAsLink = false;
-  @Output() edit = new EventEmitter<string>();
-  @Output() delete = new EventEmitter<string>();
+  @Input() clickable = false;
+  @Output() selected = new EventEmitter<Transaction>();
 
   private readonly appState = inject(AppStateService);
 
-  readonly todayStr = new Date().toISOString().split('T')[0];
-
-  isFuture(): boolean {
-    return this.transaction.date.substring(0, 10) > this.todayStr;
+  get localDate(): string {
+    return txLocalDate(this.transaction);
   }
 
-  isToday(): boolean {
-    return this.transaction.date.substring(0, 10) === this.todayStr;
+  get isFuture(): boolean {
+    return this.localDate > todayLocalDate();
   }
 
-  getCategoryName(): string {
-    if (this.categoryName) return this.categoryName;
-    return this.appState.categoryById(this.transaction.categoryId)?.name ?? 'Category';
+  get isIncome(): boolean {
+    return isIncome(this.transaction);
   }
 
-  onEdit(): void {
-    this.edit.emit(this.transaction.id);
+  get category() {
+    return this.appState.categoryById(this.transaction.categoryId);
   }
 
-  onDelete(): void {
-    this.delete.emit(this.transaction.id);
+  get label(): string {
+    return this.categoryName || this.category?.name || 'Uncategorized';
+  }
+
+  get color(): string {
+    return this.isIncome ? 'var(--pos)' : this.category?.color ?? 'var(--text-3)';
+  }
+
+  get initial(): string {
+    return (this.label.trim().charAt(0) || '?').toUpperCase();
+  }
+
+  get dateLabel(): string {
+    const date = this.localDate;
+    const year = date.slice(0, 4);
+    return shortDate(date, year !== todayLocalDate().slice(0, 4));
+  }
+
+  get meta(): string[] {
+    const parts: string[] = [];
+    if (this.showDate) {
+      parts.push(this.dateLabel);
+    }
+    if (this.showCategory) {
+      parts.push(this.label);
+    }
+    if (this.showPaidBy && this.paidByName) {
+      parts.push(`Paid by ${this.paidByName}`);
+    }
+    if (this.showScope) {
+      parts.push(this.transaction.scope === 'shared' ? 'Shared' : 'Personal');
+    }
+    return parts;
+  }
+
+  onClick(): void {
+    if (this.clickable) {
+      this.selected.emit(this.transaction);
+    }
   }
 }

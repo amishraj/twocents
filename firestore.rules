@@ -1,23 +1,22 @@
 rules_version = '2';
+// Phase-A compatibility rules.
+//
+// These rules accept BOTH the legacy shape (members[] only, role checks
+// effectively "any household member") AND the new shape (membersByUid map,
+// proper role enforcement). They are intentionally permissive in the legacy
+// branches so existing clients keep working through the staged rollout
+// (compat rules → dual-writing app → backfill → strict rules).
+//
+// The strict version, ready for phase-E, lives in firestore.rules.strict.
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
 
     function isSameUser(uid) {
       return signedIn() && request.auth.uid == uid;
-    }
-
-    function isHouseholdMemberOf(otherUid) {
-      return signedIn() && userDoc(request.auth.uid).data.householdId == userDoc(otherUid).data.householdId;
-    }
-
-    function isAdmin() {
-      return signedIn() && (
-        request.auth.token.email == 'amishu197@gmail.com' ||
-        userDoc(request.auth.uid).data.email == 'amishu197@gmail.com'
-      );
     }
 
     function userDoc(uid) {
@@ -28,101 +27,182 @@ service cloud.firestore {
       return userDoc(request.auth.uid).data.householdId;
     }
 
+    function isHouseholdMemberOf(otherUid) {
+      return signedIn() && userDoc(request.auth.uid).data.householdId == userDoc(otherUid).data.householdId;
+    }
+
     function hasHouseholdAccess(householdId) {
       return signedIn() && userHouseholdId() == householdId;
     }
 
-    function isOwner(householdId) {
-      return hasHouseholdAccess(householdId);
+    function householdDoc(hid) {
+      return get(/databases/$(database)/documents/households/$(hid)).data;
     }
 
-    function isManagerOrOwner(householdId) {
-      return hasHouseholdAccess(householdId);
+    // True when the user's row exists in membersByUid (new shape).
+    function isMemberByUid(hid) {
+      return signedIn()
+        && 'membersByUid' in householdDoc(hid)
+        && request.auth.uid in householdDoc(hid).membersByUid;
     }
 
+    // Phase-A: legacy access OR membersByUid access. Either is fine.
+    function isMember(hid) {
+      return hasHouseholdAccess(hid) || isMemberByUid(hid);
+    }
+
+    function roleByUid(hid) {
+      return householdDoc(hid).membersByUid[request.auth.uid].role;
+    }
+
+    // Phase-A: if membersByUid is present, enforce role; otherwise any member
+    // is allowed (legacy behavior).
+    function isOwner(hid) {
+      return isMember(hid) && (
+        !('membersByUid' in householdDoc(hid))
+        || roleByUid(hid) == 'owner'
+      );
+    }
+
+    function isManagerOrOwner(hid) {
+      return isMember(hid) && (
+        !('membersByUid' in householdDoc(hid))
+        || roleByUid(hid) == 'owner'
+        || roleByUid(hid) == 'manager'
+      );
+    }
+
+    function adminEmails() {
+      return get(/databases/$(database)/documents/adminFlags/admins).data.emails;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        // bootstrap fallback in case adminFlags/admins is missing
+        request.auth.token.email == 'amishu197@gmail.com'
+        || (exists(/databases/$(database)/documents/adminFlags/admins)
+            && request.auth.token.email in adminEmails())
+      );
+    }
+
+    // ---------- users/{uid} ----------
     match /users/{uid} {
-      allow read: if isSameUser(uid) || isHouseholdMemberOf(uid);
-      allow create, update: if isSameUser(uid);
+      allow read:   if isSameUser(uid) || isHouseholdMemberOf(uid);
+      allow create: if isSameUser(uid);
+      // Phase-A keeps household membership self-service; strict phase-E will
+      // require the user-doc householdId change to align with a membersByUid
+      // post-state on the target household.
+      allow update: if isSameUser(uid);
       allow delete: if false;
 
-      match /transactions/{docId} {
-        allow read, create, update, delete: if isSameUser(uid);
-      }
+      match /transactions/{docId}        { allow read, write: if isSameUser(uid); }
+      match /categories/{docId}          { allow read, write: if isSameUser(uid); }
+      match /budgets/{docId}             { allow read, write: if isSameUser(uid); }
+      match /savings/{docId}             { allow read, write: if isSameUser(uid); }
+      match /investments/{docId}         { allow read, write: if isSameUser(uid); }
+      match /recurringTemplates/{docId}  { allow read, write: if isSameUser(uid); }
+      match /additionalIncome/{docId}    { allow read, write: if isSameUser(uid); }
 
       match /bankConnections/{docId} {
-        allow read: if isSameUser(uid) || isAdmin();
-        allow create, update, delete: if isSameUser(uid) || isAdmin();
+        allow read, write: if isSameUser(uid) || isAdmin();
       }
-
       match /bankAccounts/{docId} {
-        allow read: if isSameUser(uid) || isAdmin();
-        allow create, update, delete: if isSameUser(uid) || isAdmin();
+        allow read, write: if isSameUser(uid) || isAdmin();
       }
-
       match /bankIssues/{docId} {
-        allow read: if isSameUser(uid) || isAdmin();
-        allow create, update, delete: if isSameUser(uid) || isAdmin();
+        allow read, write: if isSameUser(uid) || isAdmin();
       }
     }
 
+    // ---------- adminFlags ----------
     match /adminFlags/{docId} {
-      allow read: if signedIn();
+      allow read:                   if signedIn();
       allow create, update, delete: if isAdmin();
     }
 
+    // ---------- inviteCodes/{code} ----------
+    // Single-doc lookup by known code (get), but never enumerate (list).
+    match /inviteCodes/{code} {
+      allow get:    if signedIn();
+      allow list:   if false;
+      allow create: if signedIn()
+        && isMember(request.resource.data.householdId);
+      // Accept: single-use. A code may transition acceptedByUid from unset/null
+      // to the accepting user exactly once; the householdId can never change.
+      allow update: if signedIn()
+        && (!('acceptedByUid' in resource.data) || resource.data.acceptedByUid == null)
+        && request.resource.data.acceptedByUid == request.auth.uid
+        && request.resource.data.householdId == resource.data.householdId;
+      allow delete: if isManagerOrOwner(resource.data.householdId);
+    }
+
+    // ---------- households/{hid} ----------
     match /households/{householdId} {
-      allow read: if signedIn();
+      // Only members may read the household root doc. Non-members resolve an
+      // invite to a householdId via inviteCodes/{code} (single-doc get) — they
+      // never need to read the household itself.
+      allow read:   if isMember(householdId);
       allow create: if signedIn();
-      allow update: if signedIn();
+      // Existing members may update settings and the members list.
+      allow update: if isMember(householdId);
+      // Self-join (phase-A): a signed-in non-member may add ONLY their own
+      // membersByUid entry, with role 'member'. membersByUid is the
+      // authoritative role source; the members[] display mirror is not
+      // constrained here (a joiner cannot escalate their role this way).
+      allow update: if signedIn()
+        && 'membersByUid' in resource.data
+        && !(request.auth.uid in resource.data.membersByUid)
+        && request.auth.uid in request.resource.data.membersByUid
+        && request.resource.data.membersByUid[request.auth.uid].role == 'member'
+        && request.resource.data.membersByUid
+             .diff(resource.data.membersByUid).affectedKeys().hasOnly([request.auth.uid]);
       allow delete: if false;
 
       match /categories/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
+        allow read:           if isMember(householdId);
         allow create, update: if isManagerOrOwner(householdId);
-        allow delete: if isOwner(householdId);
+        allow delete:         if isOwner(householdId);
       }
-
       match /budgets/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
+        allow read:           if isMember(householdId);
         allow create, update: if isManagerOrOwner(householdId);
-        allow delete: if isOwner(householdId);
+        allow delete:         if isOwner(householdId);
       }
-
       match /transactions/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
-        allow create, update: if hasHouseholdAccess(householdId);
-        allow delete: if isOwner(householdId);
+        allow read:           if isMember(householdId);
+        allow create, update: if isMember(householdId);
+        allow delete:         if isOwner(householdId);
       }
-
       match /savings/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
-        allow create, update: if hasHouseholdAccess(householdId);
-        allow delete: if isOwner(householdId);
+        allow read:           if isMember(householdId);
+        allow create, update: if isMember(householdId);
+        allow delete:         if isOwner(householdId);
       }
-
       match /investments/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
-        allow create, update: if hasHouseholdAccess(householdId);
-        allow delete: if isOwner(householdId);
+        allow read:           if isMember(householdId);
+        allow create, update: if isMember(householdId);
+        allow delete:         if isOwner(householdId);
       }
-
       match /invites/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
-        allow create: if isManagerOrOwner(householdId);
+        allow read:           if isMember(householdId);
+        allow create:         if isManagerOrOwner(householdId);
         allow update, delete: if isOwner(householdId);
       }
-
       match /householdChangeRequests/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
-        allow create: if hasHouseholdAccess(householdId);
+        allow read:   if isMember(householdId);
+        allow create: if isMember(householdId);
         allow update: if isOwner(householdId);
         allow delete: if false;
       }
-
       match /recurringTemplates/{docId} {
-        allow read: if hasHouseholdAccess(householdId);
-        allow create, update: if hasHouseholdAccess(householdId);
-        allow delete: if isOwner(householdId);
+        allow read:           if isMember(householdId);
+        allow create, update: if isMember(householdId);
+        allow delete:         if isOwner(householdId);
+      }
+      match /additionalIncome/{docId} {
+        allow read:           if isMember(householdId);
+        allow create, update: if isMember(householdId);
+        allow delete:         if isOwner(householdId);
       }
     }
   }
